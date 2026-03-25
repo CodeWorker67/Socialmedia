@@ -12,7 +12,10 @@ creds.json
 d.sh
 db/database.db
 speedgamer.db
-config_bd/speedgamer.db
+socialmedia.db
+socialvpn.db
+config_bd/socialmedia.db
+config_bd/socialvpn.db
 db/config.db
 load/userbot.py
 load/

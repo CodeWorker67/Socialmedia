@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, Asyn
 from sqlalchemy.orm import DeclarativeBase
 from datetime import datetime
 
-DB_URL = "sqlite+aiosqlite:///config_bd/socialmedia.db"
+DB_URL = "sqlite+aiosqlite:///config_bd/socialvpn.db"
 engine = create_async_engine(DB_URL, echo=False)
 AsyncSessionLocal = async_sessionmaker(engine, expire_on_commit=False)
 
