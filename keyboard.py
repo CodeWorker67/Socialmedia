@@ -107,7 +107,7 @@ def keyboard_tariff_bonus():
         r_30="🤝 30 дней - 199 руб",
         r_90="✅ 90 дней - 539 руб (выгода -10%)",
         r_240="🏆 240 дней - 999 руб (выгода -40%)",
-        # r_white_30="📱 Мобильный тариф (белые списки) - 299 руб",
+        # r_white_30="📱 Мобильный тариф - 299 руб",
         free_vpn="✨ПОПРОБОВАТЬ 5 дней БЕСПЛАТНО✨",
         back_to_main="🔙 Назад",
     )
@@ -121,7 +121,7 @@ def keyboard_tariff():
         r_30="🤝 30 дней - 199 руб",
         r_90="✅ 90 дней - 539 руб (выгода -10%)",
         r_240="🏆 240 дней - 999 руб (выгода -40%)",
-        # r_white_30="📱 Мобильный тариф (белые списки) - 299 руб",
+        # r_white_30="📱 Мобильный тариф - 299 руб",
         back_to_main="🔙 Назад",
     )
 
@@ -134,7 +134,7 @@ def keyboard_tariff_trial():
         r_30="🤝 30 дней - 199 руб",
         r_90="✅ 90 дней - 539 руб (выгода -10%)",
         r_240="🏆 240 дней - 999 руб (выгода -40%)",
-        # r_white_30="📱 Мобильный тариф (белые списки) - 299 руб",
+        # r_white_30="📱 Мобильный тариф - 299 руб",
         back_to_main="🔙 Назад",
     )
 
@@ -165,7 +165,7 @@ def keyboard_gift_tariff():
         gift_r_30="🤝 30 дней - 199 руб",
         gift_r_90="✅ 90 дней - 539 руб (выгода -10%)",
         gift_r_240="🏆 240 дней - 999 руб (выгода -40%)",
-        # gift_r_white_30="📱 Мобильный тариф (белые списки) - 299 руб",
+        # gift_r_white_30="📱 Мобильный тариф - 299 руб",
         back_to_main="🔙 Назад",
     )
 
@@ -186,7 +186,7 @@ def keyboard_subscription(sub_url, sub_url_white):
         buttons.append(
             [
                 InlineKeyboardButton(
-                    text="📱 Мобильный тариф (белые списки)",
+                    text="📱 Мобильный тариф",
                     url=sub_url_white,
                     style=STYLE_PRIMARY,
                 )
@@ -260,7 +260,7 @@ def keyboard_import_sub(app_callback: str, has_casual: bool, has_white: bool):
         buttons.append(
             [
                 InlineKeyboardButton(
-                    text="📱 Мобильный тариф (белые списки)",
+                    text="📱 Мобильный тариф",
                     callback_data=f"{app_callback}_white",
                     style=STYLE_PRIMARY,
                 )

@@ -140,7 +140,7 @@ async def import_end(callback: CallbackQuery):
 
     if callback.data.endswith('_white'):
         sub_url = await x3.sublink(user_id + '_white')
-        label = '📱 Мобильный тариф (белые списки)'
+        label = '📱 Мобильный тариф'
     else:
         sub_url = await x3.sublink(user_id)
         label = '💫 Подписка PRO — соцсети'

@@ -43,7 +43,7 @@ async def process_confirmed_payment(payload):
             gift_id = await sql.create_gift(user_id, duration, white_flag)
 
             # Отправляем сообщение с ссылкой на подарок
-            marker = ' с обходом белых листов 🔥🔥🔥' if white_flag else ''
+            marker = ' — 📱 мобильный тариф' if white_flag else ''
             gift_message = lexicon['payment_gift'].format(duration, marker, gift_id)
 
             try:
