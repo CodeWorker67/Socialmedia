@@ -8,8 +8,9 @@ from logging_config import logger
 
 async def send_push_cron(debug: bool = False):
     """
-    Отправляет push-уведомления пользователям с Is_tarif = False
-    в определенные интервалы после создания.
+    Две воронки по времени с регистрации (create_user)
+    1) Нет в панели (in_panel=False) — тексты push_not_subscribed_* (+ видео на отметке ~3 ч).
+    2) В панели, но VPN ещё не подключён (is_connect=False) — push_not_connected_* (+ видео ~3 ч).
     """
     try:
         # Получаем всех пользователей с Is_tarif = False
@@ -40,7 +41,9 @@ async def send_push_cron(debug: bool = False):
                 time_diff = now - create_time
                 minutes_diff = time_diff.total_seconds() / 60
                 video_flag = False
-                if not user_data[4]: #Проверяем Is_pay_null, если нет подписки то отсылаем
+                in_panel = user_data[4]
+                is_connect = user_data[5]
+                if not in_panel:
                     message_text = None
                     if 30 <= minutes_diff <= 60:
                         message_text = lexicon['push_not_subscribed_30m']
@@ -52,23 +55,34 @@ async def send_push_cron(debug: bool = False):
 
                     if message_text:
                         try:
-                            keyboard_broadcast = create_kb(
+                            keyboard_broadcast_mes = create_kb(
                                 1,
-                                styles={'free_vpn': STYLE_SUCCESS},
+                                styles={
+                                    'free_vpn': STYLE_SUCCESS,
+                                    'video_faq': STYLE_PRIMARY,
+                                },
+                                free_vpn='✨ Попробовать бесплатно',
+                                video_faq='🎥 Видеоинструкция',
+                            )
+                            keyboard_broadcast_video = create_kb(
+                                1,
+                                styles={
+                                    'free_vpn': STYLE_SUCCESS,
+                                },
                                 free_vpn='✨ Попробовать бесплатно',
                             )
                             if video_flag:
                                 await bot.send_video(
                                     chat_id=user_id,
-                                    video='BAACAgIAAxkBAAECpqNpqrDnzrb_G1rcEtZli39lGgVpMAACa5sAAl9MWUmxYN_rJYzPVToE',
+                                    video='BAACAgIAAxkBAAECdlppx-fOOvQHbjqkXBjIrkT3nbv5oQACpJcAAg2AQUpn3JF_9sjbLzoE',
                                     caption=message_text,
-                                    reply_markup=keyboard_broadcast
+                                    reply_markup=keyboard_broadcast_video
                                 )
                             else:
                                 await bot.send_message(
                                     chat_id=user_id,
                                     text=message_text,
-                                    reply_markup=keyboard_broadcast
+                                    reply_markup=keyboard_broadcast_mes
                                 )
                             sent_count_not_sub += 1
                             logger.info(f"Отправлено push-уведомление пользователю {user_id}")
@@ -76,7 +90,7 @@ async def send_push_cron(debug: bool = False):
                             failed_count_not_sub += 1
                             logger.error(f"Не удалось отправить сообщение пользователю {user_id}: {e}")
 
-                elif not user_data[5]:
+                elif not is_connect:
                     message_text = None
                     if 30 <= minutes_diff <= 60:
                         message_text = lexicon['push_not_connected_30m']
@@ -88,23 +102,34 @@ async def send_push_cron(debug: bool = False):
 
                     if message_text:
                         try:
-                            keyboard_broadcast = create_kb(
+                            keyboard_broadcast_mes = create_kb(
                                 1,
-                                styles={'connect_vpn': STYLE_PRIMARY},
+                                styles={
+                                    'connect_vpn': STYLE_PRIMARY,
+                                    'video_faq': STYLE_PRIMARY,
+                                },
+                                connect_vpn='🌐 Подключить Ускоритель соцсетей',
+                                video_faq='🎥 Видеоинструкция',
+                            )
+                            keyboard_broadcast_video = create_kb(
+                                1,
+                                styles={
+                                    'connect_vpn': STYLE_PRIMARY
+                                },
                                 connect_vpn='🌐 Подключить Ускоритель соцсетей',
                             )
                             if video_flag:
                                 await bot.send_video(
                                     chat_id=user_id,
-                                    video='BAACAgIAAxkBAAECpqNpqrDnzrb_G1rcEtZli39lGgVpMAACa5sAAl9MWUmxYN_rJYzPVToE',
+                                    video='BAACAgIAAxkBAAECdlppx-fOOvQHbjqkXBjIrkT3nbv5oQACpJcAAg2AQUpn3JF_9sjbLzoE',
                                     caption=message_text,
-                                    reply_markup=keyboard_broadcast
+                                    reply_markup=keyboard_broadcast_video
                                 )
                             else:
                                 await bot.send_message(
                                     chat_id=user_id,
                                     text=message_text,
-                                    reply_markup=keyboard_broadcast
+                                    reply_markup=keyboard_broadcast_mes
                                 )
                             sent_count_not_connect += 1
                             logger.info(f"Отправлено push-уведомление пользователю {user_id}")
