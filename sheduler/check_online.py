@@ -12,21 +12,24 @@ async def check_online_daily():
         users_x3 = await x3.get_all_users()
         users_panel = len(users_x3)
 
-        # 2. Фильтруем тех, кто был онлайн сегодня
+        # 2. Фильтруем тех, кто был онлайн сегодня (как в /online: userTraffic.onlineAt)
         active_telegram_ids = []
         for user in users_x3:
-            last_node = user.get('lastConnectedNode')
-            if last_node and last_node.get('connectedAt'):
-                connected_str = last_node['connectedAt']
-                try:
-                    connected_dt = datetime.fromisoformat(connected_str.replace('Z', '+00:00'))
-                    connected_date = connected_dt.date()
-                    if connected_date == datetime.now().date():
-                        telegram_id = user.get('telegramId')
-                        if telegram_id is not None:
-                            active_telegram_ids.append(telegram_id)
-                except (ValueError, TypeError):
-                    continue
+            traffic = user.get('userTraffic') or {}
+            if not traffic.get('firstConnectedAt'):
+                continue
+            connected_str = traffic.get('onlineAt')
+            if not connected_str:
+                continue
+            try:
+                connected_dt = datetime.fromisoformat(connected_str.replace('Z', '+00:00'))
+                connected_date = connected_dt.date()
+                if connected_date == datetime.now().date():
+                    telegram_id = user.get('telegramId')
+                    if telegram_id is not None:
+                        active_telegram_ids.append(int(telegram_id))
+            except (ValueError, TypeError):
+                continue
         users_active = len(active_telegram_ids)
 
         # 3. Классифицируем на платных и триальных
