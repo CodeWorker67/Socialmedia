@@ -471,6 +471,18 @@ class AsyncSQL:
                 )
                 total_payments += (await session.execute(stmt_pay)).scalar() or 0
 
+                stmt_wata_sbp = select(func.coalesce(func.sum(PaymentsWataSBP.amount), 0)).where(
+                    PaymentsWataSBP.user_id.in_(chunk),
+                    PaymentsWataSBP.status == 'confirmed',
+                )
+                total_payments += (await session.execute(stmt_wata_sbp)).scalar() or 0
+
+                stmt_wata_card = select(func.coalesce(func.sum(PaymentsWataCard.amount), 0)).where(
+                    PaymentsWataCard.user_id.in_(chunk),
+                    PaymentsWataCard.status == 'confirmed',
+                )
+                total_payments += (await session.execute(stmt_wata_card)).scalar() or 0
+
         total_payments //= 2
 
         return total, with_sub, with_tarif, with_tarif_not_blocked, total_payments, source
