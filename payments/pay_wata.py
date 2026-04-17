@@ -1,4 +1,5 @@
 import uuid
+from datetime import timedelta
 from typing import Any, Dict, Literal
 
 import aiohttp
@@ -14,6 +15,10 @@ from logging_config import logger
 router = Router()
 
 WataKind = Literal["sbp", "card"]
+
+# Не ставим canceled в БД по «только declined» в API раньше этого срока с момента создания платёжной записи:
+# у WATA иногда сначала приходит Declined, а Paid появляется позже.
+WATA_DECLINED_CANCEL_GRACE_AFTER_LINK = timedelta(minutes=30)
 
 
 class WataPayment:
