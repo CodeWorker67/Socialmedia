@@ -61,7 +61,7 @@ class WataPayment:
                 return await response.json()
 
     async def search_transactions_by_order_id(self, order_id: str) -> list:
-        url = f"{self.base_url}/transactions"
+        url = f"{self.base_url}/v2/transactions"
         params = {"orderId": order_id, "maxResultCount": 100}
         async with aiohttp.ClientSession() as session:
             async with session.get(url, headers=self.headers, params=params) as response:

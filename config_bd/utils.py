@@ -13,16 +13,6 @@ from logging_config import logger
 # Пакетная обработка для /stat: меньше 999 — лимит переменных SQLite в одном запросе.
 _STAT_IN_CHUNK = 900
 
-
-def _stat_cryptobot_to_rub(currency: str, amount_str: str) -> Optional[int]:
-    """Соответствие суммы Cryptobot тарифу в рублях (как handlers_statistic.convert_crypto_to_rub)."""
-    mapping = {
-        "TON": {"0.9": 99, "2.5": 269, "2.8": 299, "4.6": 499},
-        "USDT": {"1.3": 99, "3.5": 269, "4.0": 299, "6.5": 499},
-    }
-    return mapping.get(currency, {}).get(amount_str)
-
-
 _BILLING_OK_STATUSES = ("confirmed", "paid")
 
 # Старые суммы без duration в payload (если совпадут с тарифом — max с dct_price).
@@ -692,15 +682,13 @@ class AsyncSQL:
                 for (amt,) in (await session.execute(stmt_stars)).all():
                     total_payments += amt
 
-                stmt_cryptobot = select(PaymentsCryptobot.amount, PaymentsCryptobot.currency).where(
+                stmt_cryptobot = select(func.coalesce(func.sum(PaymentsCryptobot.amount), 0)).where(
                     PaymentsCryptobot.user_id.in_(chunk),
                     PaymentsCryptobot.status == "paid",
                     PaymentsCryptobot.amount > 0.02,
                 )
-                for amt, cur in (await session.execute(stmt_cryptobot)).all():
-                    rub = _stat_cryptobot_to_rub(cur, str(amt))
-                    if rub is not None:
-                        total_payments += rub
+                cb_sum = (await session.execute(stmt_cryptobot)).scalar() or 0
+                total_payments += int(round(float(cb_sum)))
 
         return total, with_sub, with_tarif, with_tarif_not_blocked, total_payments, source
 

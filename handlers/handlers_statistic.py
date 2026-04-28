@@ -3,8 +3,6 @@ import calendar
 import os
 import tempfile
 from datetime import datetime
-from typing import Optional
-
 import openpyxl
 from aiogram import Router
 from aiogram.filters import Command
@@ -26,14 +24,6 @@ router = Router()
 def convert_stars_to_rub(amount: int) -> int:
     """1 звезда Telegram = 1 условный рубль в отчётах."""
     return amount
-
-
-def convert_crypto_to_rub(currency: str, amount: str) -> Optional[int]:
-    mapping = {
-        'TON': {'0.9': 99, '2.5': 269, '2.8': 299, '4.6': 499},
-        'USDT': {'1.3': 99, '3.5': 269, '4.0': 299, '6.5': 499}
-    }
-    return mapping.get(currency, {}).get(amount)
 
 
 class PaymentRecord:
@@ -382,19 +372,18 @@ async def analytics_export(message: Message):
                         if rub:
                             new_payments_amounts.append((uid, rub))
 
-                # Крипто
+                # Cryptobot (amount в БД уже в рублях)
                 stmt_crypto_new = select(
                     PaymentsCryptobot.user_id,
                     PaymentsCryptobot.amount,
-                    PaymentsCryptobot.currency
                 ).where(
                     PaymentsCryptobot.time_created.between(start_date, end_date),
                     PaymentsCryptobot.status == 'paid',
                     PaymentsCryptobot.amount > 0.02
                 )
-                for uid, amt, cur in (await session.execute(stmt_crypto_new)).all():
+                for uid, amt in (await session.execute(stmt_crypto_new)).all():
                     if uid in set_new_total:
-                        rub = convert_crypto_to_rub(cur, str(amt))
+                        rub = int(round(amt))
                         if rub:
                             new_payments_amounts.append((uid, rub))
 
@@ -475,18 +464,17 @@ async def analytics_export(message: Message):
                     if rub:
                         all_payments.append((rub, is_gift))
 
-                # Крипто
+                # Cryptobot (amount в БД уже в рублях)
                 stmt_crypto_all = select(
                     PaymentsCryptobot.amount,
-                    PaymentsCryptobot.currency,
                     PaymentsCryptobot.is_gift
                 ).where(
                     PaymentsCryptobot.time_created.between(start_date, end_date),
                     PaymentsCryptobot.status == 'paid',
                     PaymentsCryptobot.amount > 0.02
                 )
-                for amount, currency, is_gift in (await session.execute(stmt_crypto_all)).all():
-                    rub = convert_crypto_to_rub(currency, str(amount))
+                for amount, is_gift in (await session.execute(stmt_crypto_all)).all():
+                    rub = int(round(amount))
                     if rub:
                         all_payments.append((rub, is_gift))
 
