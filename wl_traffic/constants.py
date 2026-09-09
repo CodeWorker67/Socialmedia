@@ -48,6 +48,7 @@ WL_SUBSCRIPTION_MONTHS: dict[int, int] = {
     7: 0,
     30: 1,
     90: 3,
+    120: 4,
     180: 6,
     365: 12,
     FOREVER_DURATION_DAYS: 1,

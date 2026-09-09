@@ -2,13 +2,14 @@ import asyncio
 import calendar
 import os
 import tempfile
-from datetime import datetime
+from datetime import datetime, date, timedelta
 import openpyxl
 from aiogram import Router
 from aiogram.filters import Command
 from aiogram.types import Message, FSInputFile
 from openpyxl.styles import Alignment, Border, Font, Side, PatternFill
 from openpyxl.chart import LineChart, BarChart, Reference
+from openpyxl.chart.series import DataPoint
 from openpyxl.utils import get_column_letter
 from sqlalchemy import select, func
 
@@ -338,6 +339,192 @@ def _sync_build_anal_payment_excel(year: int, daily_by_month: dict) -> str:
             chart.series[0].graphicalProperties.solidFill = chart_fills[idx]
         ws_charts.add_chart(chart, f"A{chart_row}")
         chart_row += 20
+
+    fd, path = tempfile.mkstemp(suffix='.xlsx')
+    os.close(fd)
+    wb.save(path)
+    return path
+
+
+def _check_recurent_period(now: datetime | None = None) -> tuple[datetime, datetime, date]:
+    """1 августа — сегодня; граница подсветки — 25 августа того же года, что и начало периода."""
+    now = now or datetime.now()
+    end_date = datetime(now.year, now.month, now.day, 23, 59, 59)
+    if now.month >= 8:
+        period_year = now.year
+    else:
+        period_year = now.year - 1
+    start_date = datetime(period_year, 8, 1, 0, 0, 0)
+    split_date = date(period_year, 8, 25)
+    return start_date, end_date, split_date
+
+
+async def _fetch_daily_revenue(start_date: datetime, end_date: datetime) -> dict[date, int]:
+    """Сумма успешных платежей (₽) по дням из всех таблиц оплат."""
+    daily: dict[date, int] = {}
+    current = start_date.date()
+    while current <= end_date.date():
+        daily[current] = 0
+        current += timedelta(days=1)
+
+    def _add(dt: datetime | None, rub) -> None:
+        if dt is None or rub is None:
+            return
+        day = dt.date()
+        if day not in daily:
+            return
+        daily[day] += int(rub)
+
+    async with AsyncSessionLocal() as session:
+        rub_models = (
+            Payments,
+            PaymentsCards,
+            PaymentsPlategaCrypto,
+            PaymentsWataSBP,
+            PaymentsWataCard,
+            PaymentsFkSBP,
+        )
+        for model in rub_models:
+            stmt = select(model.time_created, model.amount).where(
+                model.status.in_(_PAYMENT_OK_STATUSES),
+                model.time_created.between(start_date, end_date),
+            )
+            for tc, amt in (await session.execute(stmt)).all():
+                _add(tc, amt)
+
+        stmt_stars = select(PaymentsStars.time_created, PaymentsStars.amount).where(
+            PaymentsStars.status.in_(_PAYMENT_OK_STATUSES),
+            PaymentsStars.time_created.between(start_date, end_date),
+        )
+        for tc, amt in (await session.execute(stmt_stars)).all():
+            _add(tc, _stars_amount_to_rub(amt))
+
+        stmt_crypto = select(
+            PaymentsCryptobot.time_created,
+            PaymentsCryptobot.amount,
+        ).where(
+            PaymentsCryptobot.status.in_(_PAYMENT_OK_STATUSES),
+            PaymentsCryptobot.time_created.between(start_date, end_date),
+        )
+        for tc, amt in (await session.execute(stmt_crypto)).all():
+            if amt is not None and float(amt) > 0.02:
+                _add(tc, int(round(float(amt))))
+
+        stmt_rec = select(PlategaRecurent.time_created, PlategaRecurent.amount).where(
+            func.lower(PlategaRecurent.status).in_(_PAYMENT_OK_STATUSES),
+            PlategaRecurent.time_created.between(start_date, end_date),
+        )
+        for tc, amt in (await session.execute(stmt_rec)).all():
+            _add(tc, amt)
+
+    return daily
+
+
+def _sync_build_check_recurent_excel(
+    daily: dict[date, int],
+    split_date: date,
+    start_date: datetime,
+    end_date: datetime,
+) -> str:
+    wb = openpyxl.Workbook()
+    ws_data = wb.active
+    ws_data.title = "Данные"
+
+    thin_border = Border(
+        left=Side(style='thin'),
+        right=Side(style='thin'),
+        top=Side(style='thin'),
+        bottom=Side(style='thin'),
+    )
+    header_fill = PatternFill(start_color="4472C4", end_color="4472C4", fill_type="solid")
+    header_font = Font(bold=True, color="FFFFFF")
+    yellow_fill = PatternFill(start_color="FFFF00", end_color="FFFF00", fill_type="solid")
+    green_fill = PatternFill(start_color="CCFFCC", end_color="CCFFCC", fill_type="solid")
+    total_fill = PatternFill(start_color="FFF2CC", end_color="FFF2CC", fill_type="solid")
+
+    ws_data.append(["Дата", "Выручка, ₽"])
+    sorted_days = sorted(daily.keys())
+    for day in sorted_days:
+        ws_data.append([day.strftime("%d.%m.%Y"), int(daily[day])])
+
+    total_row = len(sorted_days) + 2
+    ws_data.append(["Итого", f"=SUM(B2:B{total_row - 1})"])
+
+    for col in range(1, 3):
+        cell = ws_data.cell(row=1, column=col)
+        cell.fill = header_fill
+        cell.font = header_font
+        cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+        cell.border = thin_border
+
+    for r in range(2, total_row + 1):
+        row_fill = None
+        if r < total_row:
+            row_date = sorted_days[r - 2]
+            row_fill = green_fill if row_date >= split_date else yellow_fill
+        else:
+            row_fill = total_fill
+
+        for c in range(1, 3):
+            cell = ws_data.cell(row=r, column=c)
+            cell.border = thin_border
+            cell.alignment = Alignment(horizontal="center")
+            if row_fill:
+                cell.fill = row_fill
+            if r == total_row:
+                cell.font = Font(bold=True)
+            if c == 2 and r < total_row:
+                cell.number_format = '#,##0'
+
+    for col in ws_data.columns:
+        max_len = 0
+        col_letter = col[0].column_letter
+        for cell in col:
+            if cell.value is not None:
+                max_len = max(max_len, len(str(cell.value)))
+        ws_data.column_dimensions[col_letter].width = min(max(max_len + 2, 14), 50)
+
+    ws_data.freeze_panes = "A2"
+
+    ws_chart = wb.create_sheet("График", 0)
+    ws_chart.sheet_view.showGridLines = False
+    wb.active = ws_chart
+
+    if sorted_days:
+        total_revenue = sum(daily.values())
+        total_label = f"{total_revenue:,}".replace(",", " ")
+        period_label = (
+            f"{start_date.strftime('%d.%m.%Y')} — {end_date.strftime('%d.%m.%Y')}"
+        )
+        chart = BarChart()
+        chart.type = "col"
+        chart.grouping = "clustered"
+        chart.title = f"Выручка по дням ({period_label}) — {total_label} ₽"
+        chart.y_axis.title = "Выручка, ₽"
+        chart.x_axis.title = "Дата"
+        chart.y_axis.numFmt = '#,##0'
+        chart.style = 10
+        chart.legend = None
+        chart.width = max(18, min(len(sorted_days) * 0.45, 60))
+        chart.height = 12
+
+        data_ref = Reference(ws_data, min_col=2, min_row=1, max_row=len(sorted_days) + 1)
+        cats_ref = Reference(ws_data, min_col=1, min_row=2, max_row=len(sorted_days) + 1)
+        chart.add_data(data_ref, titles_from_data=True)
+        chart.set_categories(cats_ref)
+
+        if chart.series:
+            series = chart.series[0]
+            data_points = []
+            for i, day in enumerate(sorted_days):
+                pt = DataPoint(idx=i)
+                pt.graphicalProperties.solidFill = (
+                    "CCFFCC" if day >= split_date else "FFFF00"
+                )
+                data_points.append(pt)
+            series.dPt = data_points
+
+        ws_chart.add_chart(chart, "A1")
 
     fd, path = tempfile.mkstemp(suffix='.xlsx')
     os.close(fd)
@@ -910,4 +1097,63 @@ async def anal_payment_command(message: Message):
 
     except Exception as e:
         logger.exception("Ошибка при экспорте графиков платежей")
+        await message.answer(f"❌ Ошибка: {str(e)}")
+
+
+@router.message(Command(commands=['check_recurent']))
+async def check_recurent_command(message: Message):
+    """Excel: выручка по дням с 1 августа; до 25.08 — жёлтый, с 25.08 — зелёный + график."""
+    if message.from_user.id not in ADMIN_IDS:
+        await message.answer("❌ Команда доступна только администраторам.")
+        return
+
+    await message.answer("🔄 Формирую отчёт по выручке с 1 августа...")
+
+    try:
+        now = datetime.now()
+        start_date, end_date, split_date = _check_recurent_period(now)
+        daily = await _fetch_daily_revenue(start_date, end_date)
+
+        export_path = await asyncio.to_thread(
+            _sync_build_check_recurent_excel,
+            daily,
+            split_date,
+            start_date,
+            end_date,
+        )
+
+        total = sum(daily.values())
+        before_split = sum(v for d, v in daily.items() if d < split_date)
+        from_split = sum(v for d, v in daily.items() if d >= split_date)
+
+        def _fmt_rub(n: int) -> str:
+            return f"{n:,}".replace(",", " ")
+
+        try:
+            await message.answer_document(
+                document=FSInputFile(
+                    export_path,
+                    filename=(
+                        f"check_recurent_{start_date.strftime('%d.%m.%y')}_"
+                        f"{end_date.strftime('%d.%m.%y')}.xlsx"
+                    ),
+                ),
+                caption=(
+                    f"📊 Выручка по дням\n"
+                    f"Период: {start_date.strftime('%d.%m.%Y')} — {end_date.strftime('%d.%m.%Y')}\n"
+                    f"🟡 До {split_date.strftime('%d.%m')}: {_fmt_rub(before_split)} ₽\n"
+                    f"🟢 С {split_date.strftime('%d.%m')}: {_fmt_rub(from_split)} ₽\n"
+                    f"💰 Итого: {_fmt_rub(total)} ₽"
+                ),
+            )
+        finally:
+            try:
+                os.remove(export_path)
+            except OSError:
+                pass
+
+        logger.info(f"Админ {message.from_user.id} выгрузил /check_recurent")
+
+    except Exception as e:
+        logger.exception("Ошибка при экспорте /check_recurent")
         await message.answer(f"❌ Ошибка: {str(e)}")

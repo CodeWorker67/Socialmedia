@@ -8,6 +8,7 @@ from lead_tracker import post_user_registered, post_user_trial, tracker_source_f
 from config import CHANEL_ID, ADMIN_IDS, BOT_URL, PARTNER_PROCENT, PARTNER_MIN, PARTNER_SUPPORT_URL, PUBLIC_SITE_URL
 from keyboard import (keyboard_tariff_bonus, keyboard_tariff,
                       ref_keyboard, keyboard_gift_tariff, keyboard_payment_method,
+                      keyboard_payment_method_stock,
                       keyboard_inline_ref, keyboard_partner_intro, keyboard_partner_dashboard,
                       keyboard_partner_withdraw, keyboard_buy_menu, keyboard_earn_with_us,
                       create_kb, STYLE_PRIMARY, OPEN_SITE_CB, SITE_URL,
@@ -49,6 +50,15 @@ router: Router = Router()
 _TRIAL_RETURN_GET_CB = "trial_return_get"
 _USER_TUPLE_SUBSCRIPTION_END_DATE = 9
 _USER_TUPLE_FIELD_BOOL_3 = 26
+
+_R120_PAYMENT_TEXT = (
+    "🎁 Акция: 3 + 1 месяц в подарок!\n"
+    "Ускоритель соцсетей — стабильный доступ к Instagram, YouTube и другим сервисам.\n"
+    "5 устройств, безлимитный трафик на обычные сервера.\n\n"
+    "📡 Антиглушилка: <b>+40 GB</b> трафика включено в тариф.\n\n"
+    "<b>Подписка начисляется в течении 1 часа</b>\n\n"
+    "Выберите способ оплаты:"
+)
 
 
 def _user_has_active_pro_subscription(user_data: tuple) -> bool:
@@ -369,6 +379,24 @@ async def trial_return_get_cb(callback: CallbackQuery):
 
 def _duration_days_from_tariff_cb(data: str) -> int:
     return panel_days_from_tariff_key(tariff_key_from_callback(data))
+
+
+@router.callback_query(F.data == 'r_120')
+async def process_payment_method_promo_120(callback: CallbackQuery):
+    uid = callback.from_user.id
+    if await sql.user_has_promo_120_payment(uid):
+        await callback.answer(
+            "Вы уже воспользовались этой акцией!",
+            show_alert=True,
+        )
+        return
+    await callback.answer()
+    await edit_or_send_photo(
+        callback,
+        "buy_subscription",
+        _R120_PAYMENT_TEXT,
+        keyboard_payment_method_stock("r_120"),
+    )
 
 
 @router.callback_query(F.data.in_(TARIFF_CALLBACKS))

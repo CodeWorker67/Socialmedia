@@ -17,7 +17,7 @@ router: Router = Router()
 def get_stars_amount(currency: str, duration: str) -> float:
     """Возвращает цену для тарифа в указанной криптовалюте"""
     prices = {
-        'Stars': {'7': 99, '30': 299, '90': 749, '180': 1349, '365': 2399, '5000': 4990, '5000sale': 2790, 'white_30': 499}
+        'Stars': {'7': 99, '30': 299, '90': 749, '120': 749, '180': 1349, '365': 2399, '5000': 4990, '5000sale': 2790, 'white_30': 499}
     }
     return prices.get(currency, {}).get(duration, 0)
 
