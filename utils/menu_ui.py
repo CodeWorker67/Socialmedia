@@ -79,6 +79,30 @@ def subscription_status_text(user_data: Optional[tuple]) -> str:
     return end_date_status_text(user_data[_USER_TUPLE_SUBSCRIPTION_END_DATE])
 
 
+def profile_subscription_status_text(user_data: Optional[tuple]) -> str:
+    if not user_data:
+        return "Нет подписки"
+    pro_end = (
+        user_data[_USER_TUPLE_SUBSCRIPTION_END_DATE]
+        if len(user_data) > _USER_TUPLE_SUBSCRIPTION_END_DATE
+        else None
+    )
+    white_end = (
+        user_data[_USER_TUPLE_WHITE_SUBSCRIPTION_END_DATE]
+        if len(user_data) > _USER_TUPLE_WHITE_SUBSCRIPTION_END_DATE
+        else None
+    )
+    if _end_is_active(pro_end):
+        return f"💫 VPN PRO: {end_date_status_text(pro_end)}"
+    if _end_is_active(white_end):
+        return f"📱 Мобильный тариф: {end_date_status_text(white_end)}"
+    if pro_end is not None:
+        return f"💫 VPN PRO: {end_date_status_text(pro_end)}"
+    if white_end is not None:
+        return f"📱 Мобильный тариф: {end_date_status_text(white_end)}"
+    return "Нет подписки"
+
+
 def _end_is_active(sub_end) -> bool:
     if sub_end is None:
         return False
@@ -99,9 +123,16 @@ def has_active_subscription(user_data: Optional[tuple]) -> bool:
     return _end_is_active(pro) or _end_is_active(white)
 
 
-def profile_caption(fullname: str, user_data: Optional[tuple]) -> str:
-    status = subscription_status_text(user_data)
-    return f"👤 {fullname}\n📲 {status}"
+def profile_caption(
+    fullname: str,
+    user_data: Optional[tuple],
+    sub_urls: Optional[list[str]] = None,
+) -> str:
+    status = profile_subscription_status_text(user_data)
+    parts = [f"👤 {fullname}", f"📲 {status}"]
+    if sub_urls:
+        parts.extend(sub_urls)
+    return "\n".join(parts)
 
 
 def _format_autopay(row) -> str:
@@ -280,25 +311,23 @@ async def show_main_menu(
     user = source.from_user
     user_data = await sql.get_user(user.id)
     fullname = user.full_name or user.first_name or "Пользователь"
-    caption = profile_caption(fullname, user_data)
     in_panel = bool(user_data and user_data[4])
     active = has_active_subscription(user_data)
 
     if send_hint and isinstance(source, Message):
         await send_main_menu_hint(source)
 
-    sub_url = None
+    sub_urls: list[str] = []
+    sub_url: Optional[str] = None
     if active:
-        pro_end = (
-            user_data[_USER_TUPLE_SUBSCRIPTION_END_DATE]
-            if user_data and len(user_data) > _USER_TUPLE_SUBSCRIPTION_END_DATE
-            else None
-        )
-        if _end_is_active(pro_end):
-            sub_url = await x3.sublink(str(user.id))
-        else:
-            sub_url = await x3.sublink(str(user.id) + "_white")
+        slots = await x3.active_subscription_slots(user.id)
+        for _slot_key, _label, _panel_id, username in slots:
+            url = await x3.sublink(username)
+            if url:
+                sub_urls.append(url)
+        sub_url = sub_urls[0] if sub_urls else None
 
+    caption = profile_caption(fullname, user_data, sub_urls or None)
     kb = keyboard_start(
         has_active_sub=active,
         buy_primary=not active,
