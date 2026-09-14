@@ -499,11 +499,11 @@ def keyboard_payment_cancel():
 
 
 def _sbp_callback_for_tarif(tarif: str) -> str:
-    """7 / 30 / 365 — рекуррент Platega; подарки и прочие тарифы — разовый FreeKassa."""
+    """7 / 30 / 90 / 180 / 365 — рекуррент Platega; подарки и прочие тарифы — разовый FreeKassa."""
     if tarif.startswith("gift_"):
         return f"wata_sbp_{tarif}"
     duration_key = tarif.replace("r_", "").replace("old", "")
-    if duration_key in ("7", "30", "365"):
+    if duration_key in ("7", "30", "90", "180", "365"):
         return f"platega_rec_{tarif}"
     return f"wata_sbp_{tarif}"
 

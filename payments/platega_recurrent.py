@@ -14,14 +14,16 @@ from payments.payment_limits import payment_creation_allowed
 from payments.process_payload import process_confirmed_payment
 from payments.tariff_gate import tariff_period_label
 
-RECURRENT_TARIFFS = frozenset({'7', '30', '365'})
+RECURRENT_TARIFFS = frozenset({'7', '30', '90', '180', '365'})
 RECURRENT_METHOD = 'platega_rec'
 
-# Platega interval: 1=день, 2=неделя, 3=месяц, 4=год
-PLATEGA_INTERVAL_BY_DURATION: Dict[str, int] = {
-    '7': 2,
-    '30': 3,
-    '365': 4,
+# Platega interval: 1=день, 2=неделя, 3=месяц, 4=год; intervalCount — число единиц между списаниями
+PLATEGA_RECURRENT_SCHEDULE: Dict[str, tuple[int, int]] = {
+    '7': (2, 1),
+    '30': (3, 1),
+    '90': (3, 3),
+    '180': (3, 6),
+    '365': (4, 1),
 }
 
 _SUBSCRIPTION_STATUS_MAP = {
@@ -142,6 +144,7 @@ class PlategaRecurrentClient:
         self,
         amount: int,
         interval: int,
+        interval_count: int,
         description: str,
         payload: Optional[str] = None,
     ) -> Dict[str, Any]:
@@ -152,6 +155,7 @@ class PlategaRecurrentClient:
                 'amount': int(amount),
                 'currency': 'RUB',
                 'interval': interval,
+                'intervalCount': int(interval_count),
             },
             'description': description,
             'return': BOT_URL or 'https://t.me/',
@@ -330,14 +334,17 @@ async def create_recurrent_payment(
     if not await payment_creation_allowed(user_id):
         return {'status': 'rate_limited', 'url': '', 'id': ''}
 
-    interval = PLATEGA_INTERVAL_BY_DURATION.get(duration)
-    if interval is None:
+    schedule = PLATEGA_RECURRENT_SCHEDULE.get(duration)
+    if schedule is None:
         return {'status': 'error', 'url': '', 'id': ''}
+    interval, interval_count = schedule
 
     payload = build_recurrent_payload(user_id, duration, amount, white=white, source=source)
     client = PlategaRecurrentClient(PLATEGA_API_KEY, PLATEGA_MERCHANT_ID)
     try:
-        result = await client.create_subscription(amount, interval, description, payload=payload)
+        result = await client.create_subscription(
+            amount, interval, interval_count, description, payload=payload,
+        )
     except Exception as e:
         logger.error('Platega create_recurrent_payment user={}: {}', user_id, e)
         return {'status': 'error', 'url': '', 'id': ''}

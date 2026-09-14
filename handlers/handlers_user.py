@@ -5,20 +5,22 @@ from datetime import datetime, timezone
 
 from bot import sql, x3, bot
 from lead_tracker import post_user_registered, post_user_trial, tracker_source_from_ref_and_stamp
-from config import CHANEL_ID, ADMIN_IDS, BOT_URL, PARTNER_PROCENT, PARTNER_MIN, PARTNER_SUPPORT_URL, PUBLIC_SITE_URL
+from config import CHANEL_ID, ADMIN_IDS, BOT_URL, PARTNER_PROCENT, PARTNER_MIN, PARTNER_SUPPORT_URL, PUBLIC_SITE_URL, CHECKER_ID
 from keyboard import (keyboard_tariff_bonus, keyboard_tariff,
                       ref_keyboard, keyboard_gift_tariff, keyboard_payment_method,
                       keyboard_payment_method_stock,
                       keyboard_inline_ref, keyboard_partner_intro, keyboard_partner_dashboard,
                       keyboard_partner_withdraw, keyboard_buy_menu, keyboard_earn_with_us,
                       create_kb, STYLE_PRIMARY, OPEN_SITE_CB, SITE_URL,
-                      keyboard_subscription_manage, keyboard_about_service, ABOUT_SERVICE_CB, BTN_BACK)
+                      keyboard_subscription_manage, keyboard_sub_after_buy,
+                      keyboard_about_service, ABOUT_SERVICE_CB, BTN_BACK)
 from utils.menu_ui import (
     MAIN_MENU_BUTTON_TEXT,
     edit_or_send_photo,
     show_main_menu,
     show_connect_screen,
     trial_success_caption,
+    subscription_end_display,
 )
 from web_api import create_bot_site_login_token
 from logging_config import logger
@@ -42,14 +44,19 @@ from wl_traffic.texts import format_pro_payment_link
 TARIFF_CALLBACKS = frozenset({
     'r_7', 'r_30', 'r_90', 'r_180', 'r_365', 'r_white_30', 'r_5000', 'r_5000sale',
 })
-from wl_traffic.service import credit_wl_subscription_bonus
+from wl_traffic.service import (
+    credit_wl_subscription_bonus,
+    fetch_panel_user,
+    reassign_to_active_squad,
+    user_on_limited_squad,
+)
 
 
 router: Router = Router()
 
+_BROADCAST_TRIAL_DAYS = 7
 _TRIAL_RETURN_GET_CB = "trial_return_get"
 _USER_TUPLE_SUBSCRIPTION_END_DATE = 9
-_USER_TUPLE_FIELD_BOOL_3 = 26
 
 _R120_PAYMENT_TEXT = (
     "🎁 Акция: 3 + 1 месяц в подарок!\n"
@@ -336,45 +343,90 @@ async def direct_connect_vpn_cb(callback: CallbackQuery):
     await show_connect_screen(callback)
 
 
-@router.callback_query(F.data == _TRIAL_RETURN_GET_CB)
-async def trial_return_get_cb(callback: CallbackQuery):
+async def _issue_broadcast_trial(callback: CallbackQuery) -> bool:
     uid = callback.from_user.id
-    user_data = await sql.get_user(uid)
-    if user_data is None:
-        await sql.add_user(uid, False)
-        user_data = await sql.get_user(uid)
+    days = _BROADCAST_TRIAL_DAYS
+    user_id_str = str(uid)
 
-    if user_data[_USER_TUPLE_FIELD_BOOL_3]:
-        await callback.answer("Вы уже взяли свой триал!", show_alert=True)
+    existing_user = await x3.get_user_by_username(user_id_str)
+    panel_exists = bool(existing_user and existing_user.get("response"))
+
+    try:
+        if panel_exists:
+            ok = await x3.updateClient(days, user_id_str, uid)
+        else:
+            ok = await x3.addClient(days, user_id_str, uid)
+    except Exception as e:
+        logger.error(f"get_trial: ошибка панели для {uid}: {e}")
+        ok = False
+
+    if not ok:
+        await sql.update_field_bool_3(uid, False)
+        await callback.answer(
+            "Не удалось активировать триал. Попробуйте позже или напишите в поддержку.",
+            show_alert=True,
+        )
+        return False
+
+    if await sql.get_user(uid) is not None:
+        await sql.update_in_panel(uid)
+    else:
+        await sql.add_user(uid, True)
+
+    try:
+        await sql.init_wl_trial_limits(uid)
+        panel_user = await fetch_panel_user(x3, uid)
+        if panel_user and user_on_limited_squad(panel_user):
+            await reassign_to_active_squad(x3, panel_user)
+    except Exception as e:
+        logger.error(f"get_trial: не удалось обновить WL/squad user={uid}: {e}")
+
+    if not panel_exists:
+        await post_user_trial(uid)
+
+    sub_url = await x3.sublink(user_id_str)
+    end_time = await subscription_end_display(uid)
+    period = tariff_period_label(days)
+    text = lexicon["trial_success"].format(end_time, period, sub_url or "—")
+    await edit_or_send_photo(
+        callback,
+        "subscription_manage",
+        text,
+        keyboard_sub_after_buy(sub_url or ""),
+    )
+    logger.info(f"get_trial: триал активирован user={uid} days={days}")
+
+    if CHECKER_ID is not None:
+        try:
+            await bot.send_message(
+                chat_id=CHECKER_ID,
+                text=f"Пользователь <code>{uid}</code> взял триал {days} дней",
+                parse_mode="HTML",
+            )
+        except Exception as e:
+            logger.error(f"get_trial: не удалось уведомить CHECKER_ID user={uid}: {e}")
+
+    return True
+
+
+async def _handle_broadcast_trial_claim(callback: CallbackQuery) -> None:
+    uid = callback.from_user.id
+    if not await sql.claim_broadcast_trial(uid):
+        await callback.answer("Вы уже воспользовались триалом", show_alert=True)
         return
 
     await callback.answer()
+    await _issue_broadcast_trial(callback)
 
-    user_id_str = str(uid)
-    panel_user = await x3.get_user_by_username(user_id_str)
-    if panel_user and panel_user.get("response"):
-        ok = await x3.updateClient(7, user_id_str, uid)
-    else:
-        ok = await x3.addClient(7, user_id_str, uid)
 
-    if not ok:
-        await callback.message.answer(
-            "Не удалось начислить дни. Попробуйте позже или напишите в поддержку."
-        )
-        return
+@router.callback_query(F.data == "get_trial")
+async def get_trial_cb(callback: CallbackQuery):
+    await _handle_broadcast_trial_claim(callback)
 
-    await sql.update_in_panel(uid)
-    await sql.init_wl_trial_limits(uid)
-    await sql.update_field_bool_3(uid, True)
-    await post_user_trial(uid)
-    await callback.message.answer(
-        "🎉 Поздравляем! Вы получили 7 триальных дней доступа к Ускорителю соцсетей! ✨",
-        reply_markup=create_kb(
-            1,
-            styles={"connect_vpn": STYLE_PRIMARY},
-            connect_vpn="🔗 Подключить VPN",
-        ),
-    )
+
+@router.callback_query(F.data == _TRIAL_RETURN_GET_CB)
+async def trial_return_get_cb(callback: CallbackQuery):
+    await _handle_broadcast_trial_claim(callback)
 
 
 def _duration_days_from_tariff_cb(data: str) -> int:

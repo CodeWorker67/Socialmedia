@@ -64,6 +64,29 @@ function subPagePayFromBuild(): { apiBase: string; apiKey: string } {
 type DurationId = '7' | '30' | '90' | '180' | '365'
 type PayMethodId = 'fk_sbp' | 'fk_card' | 'stars' | 'cryptobot'
 
+/** Тарифы, для которых СБП оформляется как рекуррент Platega (см. web_api._create_sbp_checkout). */
+const RECURRENT_SBP_DURATIONS: ReadonlySet<DurationId> = new Set([
+    '7',
+    '30',
+    '90',
+    '180',
+    '365'
+])
+
+function sbpRecurrentHint(duration: DurationId): string | null {
+    if (!RECURRENT_SBP_DURATIONS.has(duration)) return null
+    switch (duration) {
+        case '90':
+            return 'СБП — автоплатёж: списание каждые 3 месяца по цене тарифа. Отмена в боте (/sub или профиль).'
+        case '180':
+            return 'СБП — автоплатёж: списание каждые 6 месяцев по цене тарифа. Отмена в боте (/sub или профиль).'
+        case '7':
+            return 'СБП — автоплатёж с периодическим списанием. Отмена в боте (/sub или профиль).'
+        default:
+            return 'СБП — автоплатёж с периодическим списанием. Отмена в боте (/sub или профиль).'
+    }
+}
+
 const PAY_METHODS_ALL: ReadonlyArray<{ id: PayMethodId; label: string }> = [
     { id: 'fk_sbp', label: 'СБП' },
     { id: 'fk_card', label: 'Карты РФ' },
@@ -112,6 +135,7 @@ function SubscriptionPayBlock({ isMobile }: { isMobile: boolean }) {
     const [pickedDuration, setPickedDuration] = useState<DurationId | null>(null)
     const [busyMethod, setBusyMethod] = useState<PayMethodId | null>(null)
     const [errorText, setErrorText] = useState<string | null>(null)
+    const sbpHint = pickedDuration ? sbpRecurrentHint(pickedDuration) : null
 
     const openPay = useCallback((d: DurationId) => {
         setErrorText(null)
@@ -230,8 +254,8 @@ function SubscriptionPayBlock({ isMobile }: { isMobile: boolean }) {
                         <Stack gap="sm">
                             {tariffBtn('Пробный тариф — 7 дней — 99 ₽', '7')}
                             {tariffBtn('1 месяц — 299 ₽', '30')}
-                            {tariffBtn('3 месяца — 749 ₽ (выгода −16%)', '90')}
-                            {tariffBtn('6 месяцев — 1349 ₽ (выгода −25%)', '180')}
+                            {tariffBtn('3 месяца — 749 ₽ (СБП — автоплатёж каждые 3 мес.)', '90')}
+                            {tariffBtn('6 месяцев — 1349 ₽ (СБП — автоплатёж каждые 6 мес.)', '180')}
                             {tariffBtn('1 год — 2399 ₽ (выгода −33%)', '365')}
                         </Stack>
                     </Accordion.Panel>
@@ -249,6 +273,11 @@ function SubscriptionPayBlock({ isMobile }: { isMobile: boolean }) {
                     {errorText ? (
                         <Text c="red" size="sm">
                             {errorText}
+                        </Text>
+                    ) : null}
+                    {sbpHint ? (
+                        <Text c="dimmed" size="sm">
+                            {sbpHint}
                         </Text>
                     ) : null}
                     <SimpleGrid cols={1} spacing="xs">

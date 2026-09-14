@@ -277,7 +277,7 @@ async def _create_sbp_checkout(
     telegram_username: Optional[str] = None,
 ) -> dict[str, Any]:
     """
-    СБП для сайта и sub-page: тарифы 7/30/365 → рекуррент Platega (если настроена),
+    СБП для сайта и sub-page: тарифы 7/30/90/180/365 → рекуррент Platega (если настроена),
     иначе разовый платёж FreeKassa. Остальные тарифы — только FreeKassa.
     """
     if (

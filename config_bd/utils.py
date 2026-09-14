@@ -894,6 +894,20 @@ class AsyncSQL:
             await session.execute(stmt)
             await session.commit()
 
+    async def claim_broadcast_trial(self, user_id: int) -> bool:
+        """Атомарно резервирует broadcast-триал (field_bool_3). True — только у одного параллельного запроса."""
+        await self.add_user(user_id, False)
+        not_claimed = or_(Users.field_bool_3.is_(False), Users.field_bool_3.is_(None))
+        async with self.session_factory() as session:
+            stmt = (
+                update(Users)
+                .where(Users.user_id == user_id, not_claimed)
+                .values(field_bool_3=True)
+            )
+            result = await session.execute(stmt)
+            await session.commit()
+            return int(result.rowcount or 0) > 0
+
     async def reset_field_bool_2_all(self) -> int:
         """Всем строкам users: field_bool_2 = False. Возвращает число обновлённых записей."""
         async with self.session_factory() as session:
@@ -1409,6 +1423,17 @@ class AsyncSQL:
                     Users.is_delete == False,
                     Users.user_id.notin_(multi_paid),
                     Users.user_id.notin_(non_short_paid),
+                )
+            )
+        if category == "subscribe_none_or_expired_10d":
+            cutoff = current_time - timedelta(days=10)
+            return wrap(
+                and_(
+                    Users.is_delete == False,
+                    or_(
+                        Users.subscription_end_date.is_(None),
+                        Users.subscription_end_date <= cutoff,
+                    ),
                 )
             )
         return None

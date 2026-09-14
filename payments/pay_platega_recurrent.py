@@ -33,7 +33,7 @@ async def process_platega_recurrent(callback: CallbackQuery):
 
     if not is_recurrent_tariff(duration):
         await callback.message.answer(
-            'Автоплатёж доступен только для тарифов 7 дней, 1 месяц и 1 год.',
+            'Автоплатёж доступен для тарифов 7 дней, 1 / 3 / 6 месяцев и 1 год.',
             reply_markup=create_kb(1, back_to_main=BTN_BACK),
         )
         return
