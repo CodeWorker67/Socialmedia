@@ -62,6 +62,11 @@ async def send_db_backup_cron(bot: Optional[Bot] = None) -> None:
         await asyncio.to_thread(_make_sqlite_backup, DB_PATH, tmp_path)
         size_mb = tmp_path.stat().st_size / (1024 * 1024)
 
+        await tg_bot.send_message(
+            CHECKER_ID,
+            f"📦 Бэкап socialvpn.db готов к отправке\n{size_mb:.2f} МБ · {ts}",
+        )
+
         await tg_bot.send_document(
             chat_id=CHECKER_ID,
             document=FSInputFile(tmp_path, filename=filename),
