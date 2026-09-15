@@ -686,7 +686,7 @@ async def broadcast_confirm_yes(callback: CallbackQuery, state: FSMContext, bot:
                     reply_markup=markup,
                 )
                 await asyncio.sleep(_BROADCAST_USER_DELAY)
-            await sql.update_broadcast_status(uid, "sent")
+            await sql.mark_broadcast_date(uid)
             count += 1
             if count % 1000 == 0:
                 try:
@@ -697,7 +697,7 @@ async def broadcast_confirm_yes(callback: CallbackQuery, state: FSMContext, bot:
                 except Exception as notify_err:
                     logger.warning(f"Broadcast: не удалось отправить прогресс админу: {notify_err}")
         except Exception as e:
-            await sql.update_broadcast_status(uid, "failed")
+            await sql.mark_broadcast_date(uid)
             await sql.update_delete(uid, True)
             logger.error(f"Failed to send message to {uid}: {e}")
 

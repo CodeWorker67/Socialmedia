@@ -108,31 +108,30 @@ def _naive_utc(dt: datetime) -> datetime:
 
 # Индексы кортежа AsyncSQL.get_user() — должны совпадать с _user_tuple().
 USER_IX_SUBSCRIPTION_END = 9
-USER_IX_STAMP = 13
-USER_IX_SUBSCRIBTION = 15
-USER_IX_EMAIL = 16
-USER_IX_ACTIVATION_PASS = 18
-USER_IX_FIELD_STR_2 = 20
-USER_IX_FIELD_BOOL_1 = 22
-USER_IX_FIELD_BOOL_2 = 23
-USER_IX_PASSWORD_HASH = 25
-USER_IX_LINKED_TELEGRAM = 26
-USER_IX_PARTNER = 27
+USER_IX_STAMP = 12
+USER_IX_SUBSCRIBTION = 14
+USER_IX_EMAIL = 15
+USER_IX_ACTIVATION_PASS = 16
+USER_IX_FIELD_STR_2 = 18
+USER_IX_FIELD_BOOL_1 = 20
+USER_IX_FIELD_BOOL_2 = 21
+USER_IX_PASSWORD_HASH = 23
+USER_IX_PARTNER = 24
 
 
 def _user_tuple(user: Users) -> Tuple:
     return (
         user.id, user.user_id, user.ref, user.is_delete,
         user.in_panel, user.is_connect, user.create_user,
-        user.in_chanel, user.reserve_field, user.subscription_end_date,
+        user.in_chanel, user.reserve_field,         user.subscription_end_date,
         user.last_notification_date,
-        user.last_broadcast_status, user.last_broadcast_date,
+        user.last_broadcast_date,
         user.stamp, user.ttclid,
         user.subscribtion, user.email,
-        user.password, user.activation_pass,
+        user.activation_pass,
         user.field_str_1, user.field_str_2, user.field_str_3,
         user.field_bool_1, user.field_bool_2, user.field_bool_3,
-        user.password_hash, user.linked_telegram_id,
+        user.password_hash,
         user.partner, user.partner_balance, user.partner_pay, user.partner_flag,
         user.trafic_wl, user.limit_wl,
     )
@@ -154,13 +153,11 @@ def _verify_user_tuple_indices() -> None:
         reserve_field=False,
         subscription_end_date=dt(2020, 2, 1),
         last_notification_date=None,
-        last_broadcast_status=None,
         last_broadcast_date=None,
         stamp="stamp",
         ttclid="ttclid",
         subscribtion="sub",
         email="email@test.com",
-        password="pw",
         activation_pass="act",
         field_str_1="fs1",
         field_str_2="fs2",
@@ -169,7 +166,6 @@ def _verify_user_tuple_indices() -> None:
         field_bool_2=True,
         field_bool_3=False,
         password_hash="hash",
-        linked_telegram_id=999,
         partner="partner",
         partner_balance=1,
         partner_pay=2,
@@ -178,7 +174,7 @@ def _verify_user_tuple_indices() -> None:
         limit_wl=2.0,
     )
     t = _user_tuple(probe)
-    expected_len = 33
+    expected_len = 30
     if len(t) != expected_len:
         raise AssertionError(f"_user_tuple length {len(t)} != {expected_len}")
     checks = (
@@ -191,7 +187,6 @@ def _verify_user_tuple_indices() -> None:
         (USER_IX_FIELD_BOOL_1, probe.field_bool_1),
         (USER_IX_FIELD_BOOL_2, probe.field_bool_2),
         (USER_IX_PASSWORD_HASH, probe.password_hash),
-        (USER_IX_LINKED_TELEGRAM, probe.linked_telegram_id),
         (USER_IX_PARTNER, probe.partner),
     )
     for ix, val in checks:
@@ -980,11 +975,10 @@ class AsyncSQL:
                 return val.date()
             return val
 
-    async def update_broadcast_status(self, user_id: int, status: str):
+    async def mark_broadcast_date(self, user_id: int) -> None:
         async with self.session_factory() as session:
             stmt = update(Users).where(Users.user_id == user_id).values(
-                last_broadcast_status=status,
-                last_broadcast_date=datetime.now()
+                last_broadcast_date=datetime.now(),
             )
             await session.execute(stmt)
             await session.commit()
@@ -1740,22 +1734,6 @@ class AsyncSQL:
 
         return ref_totals, stamp_totals
 
-    async def update_broadcast_status(self, user_id: int, status: str) -> None:
-        """
-        Обновляет статус последней рассылки и дату для указанного пользователя.
-        """
-        async with self.session_factory() as session:
-            stmt = update(Users).where(Users.user_id == user_id).values(
-                last_broadcast_status=status,
-                last_broadcast_date=datetime.now()  # сохраняем полную дату и время
-            )
-            try:
-                await session.execute(stmt)
-                await session.commit()
-            except Exception as e:
-                await session.rollback()
-                logger.error(f"Error updating broadcast status for user {user_id}: {e}")
-
     async def get_gift(self, gift_id: str) -> Optional[Gifts]:
         """Возвращает запись подарка или None."""
         async with self.session_factory() as session:
@@ -2427,26 +2405,25 @@ class AsyncSQL:
     async def get_trafic_stat_source(
         self,
     ) -> Tuple[
-        List[Tuple[int, Optional[int], Optional[datetime], float, float]],
+        List[Tuple[int, Optional[datetime], float, float]],
         List[Tuple[int, datetime, Any, Optional[str], bool, str, Optional[str]]],
     ]:
         """
         Данные для /trafic_stat.
-        users: (user_id, linked_telegram_id, subscription_end_date, trafic_wl, limit_wl)
+        users: (user_id, subscription_end_date, trafic_wl, limit_wl)
         payments: (user_id, time_created, amount, payload, is_gift, channel, currency)
         channel: rub | stars | cryptobot. Успешные платежи (confirmed/paid/CONFIRMED).
         Активная подписка сейчас, trafic_wl > 7 ГБ, без тарифа «Навсегда».
         """
         from wl_traffic.constants import FOREVER_END_CUTOFF
 
-        users_rows: List[Tuple[int, Optional[int], Optional[datetime], float, float]] = []
+        users_rows: List[Tuple[int, Optional[datetime], float, float]] = []
         pay_rows: List[Tuple[int, datetime, Any, Optional[str], bool, str, Optional[str]]] = []
         now = datetime.now()
 
         async with self.session_factory() as session:
             uq = select(
                 Users.user_id,
-                Users.linked_telegram_id,
                 Users.subscription_end_date,
                 Users.trafic_wl,
                 Users.limit_wl,
@@ -2457,10 +2434,9 @@ class AsyncSQL:
                 Users.subscription_end_date < FOREVER_END_CUTOFF,
                 Users.trafic_wl > 7,
             )
-            for uid, linked, end_dt, trafic, limit_wl in (await session.execute(uq)).all():
+            for uid, end_dt, trafic, limit_wl in (await session.execute(uq)).all():
                 users_rows.append((
                     int(uid),
-                    int(linked) if linked is not None else None,
                     end_dt,
                     float(trafic or 0.0),
                     float(limit_wl or 0.0),

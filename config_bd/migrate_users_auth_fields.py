@@ -28,7 +28,6 @@ async def migrate() -> None:
     async with engine.begin() as conn:
         for col, ddl in (
             ("password_hash", "ALTER TABLE users ADD COLUMN password_hash VARCHAR(255)"),
-            ("linked_telegram_id", "ALTER TABLE users ADD COLUMN linked_telegram_id BIGINT"),
         ):
             if not await _column_exists(conn, "users", col):
                 await conn.execute(text(ddl))
@@ -53,7 +52,7 @@ async def migrate() -> None:
         )
 
     print(
-        "OK: users password_hash, linked_telegram_id; "
+        "OK: users password_hash; "
         "linking_codes, password_reset_codes (SQLite)."
     )
 

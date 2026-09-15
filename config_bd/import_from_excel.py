@@ -209,15 +209,12 @@ def _import_users(conn: sqlite3.Connection, df: pd.DataFrame) -> int:
                 _to_bool(rec.get("reserve_field")),
                 _dt_sql(rec.get("subscription_end_date")),
                 _date_sql(rec.get("last_notification_date")),
-                _to_optional_str(rec.get("last_broadcast_status")),
                 _dt_sql(rec.get("last_broadcast_date")),
                 _to_str(stamp_val, ""),
                 _to_optional_str(rec.get("ttclid")),
                 _to_optional_str(rec.get("subscribtion")),
                 _to_optional_str(rec.get("email")),
-                _to_optional_str(rec.get("password")),
                 None,  # password_hash
-                None,  # linked_telegram_id
                 _to_optional_str(rec.get("activation_pass")),
                 _to_optional_str(rec.get("field_str_1")),
                 _to_optional_str(rec.get("field_str_2")),
@@ -237,9 +234,9 @@ def _import_users(conn: sqlite3.Connection, df: pd.DataFrame) -> int:
     cols = [
         "id", "user_id", "ref", "is_delete", "in_panel", "is_connect", "create_user",
         "in_chanel", "reserve_field", "subscription_end_date",
-        "last_notification_date", "last_broadcast_status", "last_broadcast_date", "stamp",
-        "ttclid", "subscribtion", "email", "password", "password_hash",
-        "linked_telegram_id", "activation_pass", "field_str_1", "field_str_2", "field_str_3",
+        "last_notification_date", "last_broadcast_date", "stamp",
+        "ttclid", "subscribtion", "email", "password_hash",
+        "activation_pass", "field_str_1", "field_str_2", "field_str_3",
         "field_bool_1", "field_bool_2", "field_bool_3", "partner", "partner_balance",
         "partner_pay", "partner_flag",
     ]

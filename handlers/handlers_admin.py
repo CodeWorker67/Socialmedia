@@ -30,7 +30,6 @@ from config_bd.utils import (
     USER_IX_EMAIL,
     USER_IX_FIELD_BOOL_2,
     USER_IX_FIELD_STR_2,
-    USER_IX_LINKED_TELEGRAM,
     USER_IX_STAMP,
     USER_IX_SUBSCRIPTION_END,
 )
@@ -179,14 +178,11 @@ def _admin_command_parts(text: Optional[str], command: str) -> Optional[list[str
 def _panel_usernames_from_row(row: tuple) -> tuple[str, str]:
     """Пара username в панели: обычная, вайт (как в web_api._panel_vpn_usernames)."""
     tg_col = row[1]
-    linked = row[USER_IX_LINKED_TELEGRAM]
     stamp = row[USER_IX_STAMP]
     field_str_2 = row[USER_IX_FIELD_STR_2]
     tg = None
     if tg_col is not None and int(tg_col) > 0:
         tg = int(tg_col)
-    elif linked is not None and int(linked) > 0:
-        tg = int(linked)
     if tg is not None:
         s = str(tg)
         return s, f"{s}_white"
@@ -200,13 +196,10 @@ def _panel_usernames_from_row(row: tuple) -> tuple[str, str]:
 
 
 def _notify_chat_id_from_row(row: tuple) -> Optional[int]:
-    """chat_id для ЛС: user_id Telegram или привязанный linked_telegram_id."""
+    """chat_id для ЛС: Telegram user_id из строки users."""
     tg_col = row[1]
-    linked = row[USER_IX_LINKED_TELEGRAM]
     if tg_col is not None and is_telegram_chat_id(tg_col):
         return int(tg_col)
-    if linked is not None and is_telegram_chat_id(linked):
-        return int(linked)
     return None
 
 

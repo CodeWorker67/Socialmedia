@@ -27,7 +27,6 @@ from config_bd.utils import (
     USER_IX_ACTIVATION_PASS,
     USER_IX_EMAIL,
     USER_IX_FIELD_BOOL_1,
-    USER_IX_LINKED_TELEGRAM,
     USER_IX_PASSWORD_HASH,
     USER_IX_STAMP,
     _norm_email,
@@ -440,12 +439,9 @@ async def resolve_telegram_user_id(ctx: dict[str, Any]) -> int:
     if row is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "User not found")
     tg_col = row[1]
-    linked = row[USER_IX_LINKED_TELEGRAM]
     tg: Optional[int] = None
     if tg_col is not None and int(tg_col) > 0:
         tg = int(tg_col)
-    elif linked is not None:
-        tg = int(linked)
     if tg is None:
         raise HTTPException(
             status.HTTP_400_BAD_REQUEST,
@@ -463,12 +459,9 @@ async def _panel_vpn_usernames(ctx: dict[str, Any]) -> tuple[str, str]:
     if row is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "User not found")
     tg_col = row[1]
-    linked = row[USER_IX_LINKED_TELEGRAM]
     tg: Optional[int] = None
     if tg_col is not None and int(tg_col) > 0:
         tg = int(tg_col)
-    elif linked is not None and int(linked) > 0:
-        tg = int(linked)
     if tg is not None:
         s = str(tg)
         return s, f"{s}_white"
@@ -719,8 +712,6 @@ async def _deliver_reset_code(email: str, code: str, row: tuple) -> None:
     tg: Optional[int] = None
     if row[1] is not None and int(row[1]) > 0:
         tg = int(row[1])
-    elif row[USER_IX_LINKED_TELEGRAM] is not None:
-        tg = int(row[USER_IX_LINKED_TELEGRAM])
     smtp_ok = False
     if unisender_go_configured() or (SMTP_HOST and SMTP_FROM):
         smtp_ok = await _deliver_plain_email(
@@ -912,15 +903,12 @@ async def user_account(ctx: JwtCtx):
     if row is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "User not found")
     tg_col = row[1]
-    linked = row[USER_IX_LINKED_TELEGRAM]
     email = row[USER_IX_EMAIL]
     auth_type = ctx.get("auth", "telegram")
 
     tg_id: Optional[int] = None
     if tg_col is not None and int(tg_col) > 0:
         tg_id = int(tg_col)
-    elif linked is not None and int(linked) > 0:
-        tg_id = int(linked)
 
     has_telegram = tg_id is not None
     has_email = email is not None and str(email).strip() != ""

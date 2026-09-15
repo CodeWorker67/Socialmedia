@@ -36,9 +36,9 @@ DEFAULT_XLSX = ROOT / "users.xlsx"
 INSERT_COLS = [
     "user_id", "ref", "is_delete", "in_panel", "is_connect", "create_user",
     "in_chanel", "reserve_field", "subscription_end_date",
-    "last_notification_date", "last_broadcast_status", "last_broadcast_date", "stamp",
-    "ttclid", "subscribtion", "email", "password", "password_hash",
-    "linked_telegram_id", "activation_pass", "field_str_1", "field_str_2", "field_str_3",
+    "last_notification_date", "last_broadcast_date", "stamp",
+    "ttclid", "subscribtion", "email", "password_hash",
+    "activation_pass", "field_str_1", "field_str_2", "field_str_3",
     "field_bool_1", "field_bool_2", "field_bool_3", "partner", "partner_balance",
     "partner_pay", "partner_flag",
 ]
@@ -75,15 +75,12 @@ def _row_from_record(rec: dict) -> Optional[Tuple[Any, ...]]:
         0,  # reserve_field
         _dt_sql(subscription_end),
         None,  # last_notification_date
-        None,  # last_broadcast_status
         None,  # last_broadcast_date
         stamp,
         None,  # ttclid
         None,  # subscribtion
         None,  # email
-        None,  # password
         None,  # password_hash
-        None,  # linked_telegram_id
         None,  # activation_pass
         None,  # field_str_1
         None,  # field_str_2
