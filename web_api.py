@@ -23,7 +23,16 @@ from sqlalchemy.exc import IntegrityError
 
 from bot import bot, sql, x3
 from lead_tracker import post_user_trial
-from config_bd.utils import _norm_email, user_row_to_api_dict
+from config_bd.utils import (
+    USER_IX_ACTIVATION_PASS,
+    USER_IX_EMAIL,
+    USER_IX_FIELD_BOOL_1,
+    USER_IX_LINKED_TELEGRAM,
+    USER_IX_PASSWORD_HASH,
+    USER_IX_STAMP,
+    _norm_email,
+    user_row_to_api_dict,
+)
 from X3 import gift_panel_username, panel_username_for_site_user
 from config import (
     ADMIN_IDS,
@@ -418,7 +427,7 @@ def _site_test_price_rub(row: tuple, ctx: dict[str, Any]) -> Optional[int]:
     """Тестовая цена для email-аккаунта с SITE_TEST_EMAIL (оплата с сайта)."""
     if ctx.get("auth") != "email":
         return None
-    em = row[18] or ctx.get("username")
+    em = row[USER_IX_EMAIL] or ctx.get("username")
     if not em:
         return None
     if _norm_email(str(em)) != SITE_TEST_EMAIL:
@@ -431,7 +440,7 @@ async def resolve_telegram_user_id(ctx: dict[str, Any]) -> int:
     if row is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "User not found")
     tg_col = row[1]
-    linked = row[28]
+    linked = row[USER_IX_LINKED_TELEGRAM]
     tg: Optional[int] = None
     if tg_col is not None and int(tg_col) > 0:
         tg = int(tg_col)
@@ -454,7 +463,7 @@ async def _panel_vpn_usernames(ctx: dict[str, Any]) -> tuple[str, str]:
     if row is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "User not found")
     tg_col = row[1]
-    linked = row[28]
+    linked = row[USER_IX_LINKED_TELEGRAM]
     tg: Optional[int] = None
     if tg_col is not None and int(tg_col) > 0:
         tg = int(tg_col)
@@ -710,8 +719,8 @@ async def _deliver_reset_code(email: str, code: str, row: tuple) -> None:
     tg: Optional[int] = None
     if row[1] is not None and int(row[1]) > 0:
         tg = int(row[1])
-    elif row[28] is not None:
-        tg = int(row[28])
+    elif row[USER_IX_LINKED_TELEGRAM] is not None:
+        tg = int(row[USER_IX_LINKED_TELEGRAM])
     smtp_ok = False
     if unisender_go_configured() or (SMTP_HOST and SMTP_FROM):
         smtp_ok = await _deliver_plain_email(
@@ -903,8 +912,8 @@ async def user_account(ctx: JwtCtx):
     if row is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "User not found")
     tg_col = row[1]
-    linked = row[28]
-    email = row[18]
+    linked = row[USER_IX_LINKED_TELEGRAM]
+    email = row[USER_IX_EMAIL]
     auth_type = ctx.get("auth", "telegram")
 
     tg_id: Optional[int] = None
@@ -959,7 +968,7 @@ async def trial_activate(ctx: JwtCtx):
         row = await _user_row_from_jwt(ctx)
         if row is None:
             raise HTTPException(status.HTTP_404_NOT_FOUND, "User not found")
-        email = row[18] or ctx.get("username")
+        email = row[USER_IX_EMAIL] or ctx.get("username")
         if not email:
             raise HTTPException(status.HTTP_400_BAD_REQUEST, "Нет email в профиле")
         em = _norm_email(str(email))
@@ -1489,12 +1498,12 @@ async def auth_register(body: RegisterIn, request: Request):
     stamp = _normalize_stamp(body.stamp)
     existing = await sql.get_user_by_email(str(body.email))
     if existing:
-        email_verified = bool(existing[24])
+        email_verified = bool(existing[USER_IX_FIELD_BOOL_1])
         if email_verified:
             raise HTTPException(status.HTTP_409_CONFLICT, "Email уже зарегистрирован")
         # Not verified yet — resend code
         if stamp != "email":
-            current_stamp = (existing[14] or "").strip()
+            current_stamp = (existing[USER_IX_STAMP] or "").strip()
             if not current_stamp or current_stamp == "email":
                 await sql.set_user_stamp_by_internal_id(int(existing[0]), stamp)
         await _send_verification_code(str(body.email))
@@ -1515,7 +1524,7 @@ async def auth_verify_email(body: VerifyEmailIn, request: Request):
     row = await sql.get_user_by_email(str(body.email))
     if row is None:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Пользователь не найден")
-    activation = row[20]
+    activation = row[USER_IX_ACTIVATION_PASS]
     if not activation or ":" not in str(activation):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Код не был отправлен")
     stored_code, expires_ts = str(activation).rsplit(":", 1)
@@ -1529,7 +1538,7 @@ async def auth_verify_email(body: VerifyEmailIn, request: Request):
     internal_id = int(row[0])
     await sql.set_email_verified(internal_id, True)
     await sql.set_activation_pass_by_email(str(body.email), None)
-    em = row[18] or str(body.email).strip().lower()
+    em = row[USER_IX_EMAIL] or str(body.email).strip().lower()
     token = _issue_jwt(user_id=internal_id, auth="email", username=em)
     return _auth_response(request, token, {"id": internal_id, "email": em}, success=True)
 
@@ -1541,7 +1550,7 @@ async def auth_resend_code(body: ResendCodeIn, request: Request):
     row = await sql.get_user_by_email(str(body.email))
     if row is None:
         return {"success": True}
-    if bool(row[24]):
+    if bool(row[USER_IX_FIELD_BOOL_1]):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Email уже подтверждён")
     await _send_verification_code(str(body.email))
     return {"success": True}
@@ -1580,7 +1589,7 @@ async def auth_google(body: GoogleAuthIn, request: Request):
     else:
         internal_id = int(row[0])
         # Ensure email_verified is set
-        if not bool(row[24]):
+        if not bool(row[USER_IX_FIELD_BOOL_1]):
             await sql.set_email_verified(internal_id, True)
 
     token = _issue_jwt(user_id=internal_id, auth="email", username=em)
@@ -1601,9 +1610,9 @@ async def auth_login(body: LoginIn, request: Request):
     client_ip = request.headers.get("x-real-ip", request.client.host)
     _rate_limit_or_raise(client_ip, "login", max_req=10, window=300)
     row = await sql.get_user_by_email(str(body.email))
-    if row is None or not _verify_password(body.password, row[27]):
+    if row is None or not _verify_password(body.password, row[USER_IX_PASSWORD_HASH]):
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Неверный email или пароль")
-    email_verified = bool(row[24])
+    email_verified = bool(row[USER_IX_FIELD_BOOL_1])
     if not email_verified:
         await _send_verification_code(str(body.email))
         return JSONResponse(
@@ -1611,7 +1620,7 @@ async def auth_login(body: LoginIn, request: Request):
             content={"detail": "Email не подтверждён", "requires_verification": True, "email": str(body.email).strip().lower()},
         )
     internal_id = int(row[0])
-    em = row[18] or str(body.email).strip().lower()
+    em = row[USER_IX_EMAIL] or str(body.email).strip().lower()
     token = _issue_jwt(user_id=internal_id, auth="email", username=em)
     return _auth_response(request, token, {"id": internal_id, "email": em})
 
@@ -1732,9 +1741,9 @@ async def user_change_password(ctx: JwtCtx, body: ChangePasswordIn):
     row = await _user_row_from_jwt(ctx)
     if row is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "User not found")
-    if not row[27]:
+    if not row[USER_IX_PASSWORD_HASH]:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Пароль не установлен")
-    if not _verify_password(body.current_password, row[27]):
+    if not _verify_password(body.current_password, row[USER_IX_PASSWORD_HASH]):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Неверный текущий пароль")
     await sql.set_password_hash_by_internal_id(int(row[0]), _hash_password(body.new_password))
     return {"success": True}

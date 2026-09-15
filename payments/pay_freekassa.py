@@ -278,10 +278,12 @@ async def pay_for_gift(
 
 
 async def _site_test_price_rub(billing_user_id: int) -> Optional[int]:
+    from config_bd.utils import USER_IX_EMAIL
+
     row = await sql.get_user(billing_user_id)
-    if not row or len(row) <= 18 or not row[18]:
+    if not row or len(row) <= USER_IX_EMAIL or not row[USER_IX_EMAIL]:
         return None
-    if _norm_email(str(row[18])) != SITE_TEST_EMAIL:
+    if _norm_email(str(row[USER_IX_EMAIL])) != SITE_TEST_EMAIL:
         return None
     return SITE_TEST_PRICE_RUB
 

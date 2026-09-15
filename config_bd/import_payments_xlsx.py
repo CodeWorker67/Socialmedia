@@ -112,7 +112,7 @@ def import_payments_xlsx(path: Path) -> Dict[str, int]:
         "unknown_amount": 0,
         "user_missing": 0,
         "sub_pro": 0,
-        "sub_white": 0,
+        "sub_mobile": 0,
     }
 
     conn = sqlite3.connect(DB_PATH)
@@ -120,7 +120,7 @@ def import_payments_xlsx(path: Path) -> Dict[str, int]:
         conn.execute("PRAGMA journal_mode=WAL")
         existing = _existing_tracker_payments(conn)
         fk_rows: List[Tuple[Any, ...]] = []
-        sub_cache: Dict[int, Tuple[Optional[datetime], Optional[datetime]]] = {}
+        sub_cache: Dict[int, Optional[datetime]] = {}
 
         records = sorted(
             df.to_dict("records"),
@@ -170,27 +170,21 @@ def import_payments_xlsx(path: Path) -> Dict[str, int]:
 
             if uid not in sub_cache:
                 user_row = conn.execute(
-                    "SELECT subscription_end_date, white_subscription_end_date "
-                    "FROM users WHERE user_id = ?",
+                    "SELECT subscription_end_date FROM users WHERE user_id = ?",
                     (uid,),
                 ).fetchone()
                 if user_row is None:
                     stats["user_missing"] += 1
                     continue
-                sub_cache[uid] = (
-                    _parse_db_dt(user_row[0]),
-                    _parse_db_dt(user_row[1]),
-                )
+                sub_cache[uid] = _parse_db_dt(user_row[0])
 
-            pro_end, white_end = sub_cache[uid]
+            pro_end = sub_cache[uid]
             now = created_at
+            pro_end = _extend_end_date(pro_end, days, now)
+            sub_cache[uid] = pro_end
             if is_white:
-                white_end = _extend_end_date(white_end, days, now)
-                sub_cache[uid] = (pro_end, white_end)
-                stats["sub_white"] += 1
+                stats["sub_mobile"] += 1
             else:
-                pro_end = _extend_end_date(pro_end, days, now)
-                sub_cache[uid] = (pro_end, white_end)
                 stats["sub_pro"] += 1
 
         if fk_rows:
@@ -200,11 +194,10 @@ def import_payments_xlsx(path: Path) -> Dict[str, int]:
             conn.executemany(sql, fk_rows)
             stats["inserted"] = len(fk_rows)
 
-        for uid, (pro_end, white_end) in sub_cache.items():
+        for uid, pro_end in sub_cache.items():
             conn.execute(
-                "UPDATE users SET subscription_end_date = ?, white_subscription_end_date = ? "
-                "WHERE user_id = ?",
-                (_dt_sql(pro_end), _dt_sql(white_end), uid),
+                "UPDATE users SET subscription_end_date = ? WHERE user_id = ?",
+                (_dt_sql(pro_end), uid),
             )
 
         conn.commit()
@@ -241,7 +234,7 @@ def main() -> None:
     print(f"  Неизвестная сумма (без дней): {stats['unknown_amount']}")
     print(f"  Пользователь не в users: {stats['user_missing']}")
     print(f"  Продлено PRO (subscription_end_date): {stats['sub_pro']}")
-    print(f"  Продлено white (white_subscription_end_date): {stats['sub_white']}")
+    print(f"  Платежи mobile-тарифа (тоже subscription_end_date): {stats['sub_mobile']}")
     print(f"  База: {DB_PATH}")
 
 

@@ -106,15 +106,29 @@ def _naive_utc(dt: datetime) -> datetime:
     return dt.astimezone(timezone.utc).replace(tzinfo=None)
 
 
+# Индексы кортежа AsyncSQL.get_user() — должны совпадать с _user_tuple().
+USER_IX_SUBSCRIPTION_END = 9
+USER_IX_STAMP = 13
+USER_IX_SUBSCRIBTION = 15
+USER_IX_EMAIL = 16
+USER_IX_ACTIVATION_PASS = 18
+USER_IX_FIELD_STR_2 = 20
+USER_IX_FIELD_BOOL_1 = 22
+USER_IX_FIELD_BOOL_2 = 23
+USER_IX_PASSWORD_HASH = 25
+USER_IX_LINKED_TELEGRAM = 26
+USER_IX_PARTNER = 27
+
+
 def _user_tuple(user: Users) -> Tuple:
     return (
         user.id, user.user_id, user.ref, user.is_delete,
         user.in_panel, user.is_connect, user.create_user,
         user.in_chanel, user.reserve_field, user.subscription_end_date,
-        user.white_subscription_end_date, user.last_notification_date,
+        user.last_notification_date,
         user.last_broadcast_status, user.last_broadcast_date,
         user.stamp, user.ttclid,
-        user.subscribtion, user.white_subscription, user.email,
+        user.subscribtion, user.email,
         user.password, user.activation_pass,
         user.field_str_1, user.field_str_2, user.field_str_3,
         user.field_bool_1, user.field_bool_2, user.field_bool_3,
@@ -122,6 +136,67 @@ def _user_tuple(user: Users) -> Tuple:
         user.partner, user.partner_balance, user.partner_pay, user.partner_flag,
         user.trafic_wl, user.limit_wl,
     )
+
+
+def _verify_user_tuple_indices() -> None:
+    """Проверка USER_IX_* при старте/тестах — падает при рассинхроне с _user_tuple."""
+    from datetime import datetime as dt
+
+    probe = Users(
+        id=1,
+        user_id=2,
+        ref="ref",
+        is_delete=False,
+        in_panel=True,
+        is_connect=False,
+        create_user=dt(2020, 1, 1),
+        in_chanel=False,
+        reserve_field=False,
+        subscription_end_date=dt(2020, 2, 1),
+        last_notification_date=None,
+        last_broadcast_status=None,
+        last_broadcast_date=None,
+        stamp="stamp",
+        ttclid="ttclid",
+        subscribtion="sub",
+        email="email@test.com",
+        password="pw",
+        activation_pass="act",
+        field_str_1="fs1",
+        field_str_2="fs2",
+        field_str_3="fs3",
+        field_bool_1=True,
+        field_bool_2=True,
+        field_bool_3=False,
+        password_hash="hash",
+        linked_telegram_id=999,
+        partner="partner",
+        partner_balance=1,
+        partner_pay=2,
+        partner_flag=True,
+        trafic_wl=1.0,
+        limit_wl=2.0,
+    )
+    t = _user_tuple(probe)
+    expected_len = 33
+    if len(t) != expected_len:
+        raise AssertionError(f"_user_tuple length {len(t)} != {expected_len}")
+    checks = (
+        (USER_IX_SUBSCRIPTION_END, probe.subscription_end_date),
+        (USER_IX_STAMP, probe.stamp),
+        (USER_IX_SUBSCRIBTION, probe.subscribtion),
+        (USER_IX_EMAIL, probe.email),
+        (USER_IX_ACTIVATION_PASS, probe.activation_pass),
+        (USER_IX_FIELD_STR_2, probe.field_str_2),
+        (USER_IX_FIELD_BOOL_1, probe.field_bool_1),
+        (USER_IX_FIELD_BOOL_2, probe.field_bool_2),
+        (USER_IX_PASSWORD_HASH, probe.password_hash),
+        (USER_IX_LINKED_TELEGRAM, probe.linked_telegram_id),
+        (USER_IX_PARTNER, probe.partner),
+    )
+    for ix, val in checks:
+        if t[ix] != val:
+            raise AssertionError(f"USER_IX mismatch at [{ix}]: {t[ix]!r} != {val!r}")
 
 
 def _users_column_value_for_api(v: Any) -> Any:
@@ -455,8 +530,8 @@ class AsyncSQL:
             e.password_hash = None
             await session.flush()
 
-            t_paid_pro, t_paid_white = await _merge_user_paid_subscription_flags(session, t.user_id)
-            e_paid_pro, e_paid_white = await _merge_user_paid_subscription_flags(session, e.user_id)
+            t_paid_pro, _ = await _merge_user_paid_subscription_flags(session, t.user_id)
+            e_paid_pro, _ = await _merge_user_paid_subscription_flags(session, e.user_id)
 
             if t_paid_pro and e_paid_pro:
                 t.subscription_end_date = _sum_subscription_end_dates(
@@ -465,15 +540,6 @@ class AsyncSQL:
             else:
                 t.subscription_end_date = _max_subscription_end_dates(
                     t.subscription_end_date, e.subscription_end_date, merge_now
-                )
-
-            if t_paid_white and e_paid_white:
-                t.white_subscription_end_date = _sum_subscription_end_dates(
-                    t.white_subscription_end_date, e.white_subscription_end_date, merge_now
-                )
-            else:
-                t.white_subscription_end_date = _max_subscription_end_dates(
-                    t.white_subscription_end_date, e.white_subscription_end_date, merge_now
                 )
 
             t.in_panel = bool(t.in_panel or e.in_panel)
@@ -494,8 +560,6 @@ class AsyncSQL:
                 t.ttclid = e.ttclid
             if not (t.subscribtion or "") and (e.subscribtion or ""):
                 t.subscribtion = e.subscribtion
-            if not (t.white_subscription or "") and (e.white_subscription or ""):
-                t.white_subscription = e.white_subscription
             t.field_bool_1 = bool(t.field_bool_1 or e.field_bool_1)
             t.field_bool_2 = bool(t.field_bool_2 or e.field_bool_2)
             t.field_bool_3 = bool(t.field_bool_3 or e.field_bool_3)
@@ -542,13 +606,10 @@ class AsyncSQL:
                         return dt.replace(tzinfo=timezone.utc)
                     return dt.astimezone(timezone.utc)
 
-                sub_end = row[9]
-                w_end = row[10]
+                sub_end = row[USER_IX_SUBSCRIPTION_END]
                 tid = int(row[1])
                 if sub_end:
                     await x3.set_expiration_date(str(tid), _aware_utc(sub_end), tid)
-                if w_end:
-                    await x3.set_expiration_date(str(tid) + "_white", _aware_utc(w_end), tid)
         except Exception as ex:
             logger.warning("post-merge panel cleanup/sync: {}", ex)
 
@@ -834,21 +895,9 @@ class AsyncSQL:
             await session.execute(stmt)
             await session.commit()
 
-    async def update_white_subscription_end_date(self, user_id: int, end_date: datetime):
-        async with self.session_factory() as session:
-            stmt = update(Users).where(Users.user_id == user_id).values(white_subscription_end_date=end_date)
-            await session.execute(stmt)
-            await session.commit()
-
     async def update_subscribtion(self, user_id: int, subscribtion: Optional[str]):
         async with self.session_factory() as session:
             stmt = update(Users).where(Users.user_id == user_id).values(subscribtion=subscribtion)
-            await session.execute(stmt)
-            await session.commit()
-
-    async def update_white_subscription(self, user_id: int, white_subscription: Optional[str]):
-        async with self.session_factory() as session:
-            stmt = update(Users).where(Users.user_id == user_id).values(white_subscription=white_subscription)
             await session.execute(stmt)
             await session.commit()
 
@@ -2119,9 +2168,9 @@ class AsyncSQL:
         """Число людей с хотя бы одной активной подпиской (end_date > now)."""
         async with self.session_factory() as session:
             now = datetime.now()
-            active_any = or_(
-                and_(Users.subscription_end_date.isnot(None), Users.subscription_end_date > now),
-                and_(Users.white_subscription_end_date.isnot(None), Users.white_subscription_end_date > now),
+            active_any = and_(
+                Users.subscription_end_date.isnot(None),
+                Users.subscription_end_date > now,
             )
             stmt = select(func.count()).select_from(Users).where(active_any)
             result = await session.execute(stmt)

@@ -213,20 +213,14 @@ class X3:
                             f"Не удалось прочитать JSON при add_client_site {db_user_id}: {e}. Считаем успехом."
                         )
                         subscription_end_date = expire_time.replace(tzinfo=datetime.timezone.utc)
-                        if is_white:
-                            await sql.update_white_subscription_end_date(db_user_id, subscription_end_date)
-                            await sql.update_white_subscription(db_user_id, client_id)
-                        else:
+                        if not is_white:
                             await sql.update_subscription_end_date(db_user_id, subscription_end_date)
                             await sql.update_subscribtion(db_user_id, client_id)
                         return True
                     else:
                         if response_data.get("success", True):
                             subscription_end_date = expire_time.replace(tzinfo=datetime.timezone.utc)
-                            if is_white:
-                                await sql.update_white_subscription_end_date(db_user_id, subscription_end_date)
-                                await sql.update_white_subscription(db_user_id, client_id)
-                            else:
+                            if not is_white:
                                 await sql.update_subscription_end_date(db_user_id, subscription_end_date)
                                 await sql.update_subscribtion(db_user_id, client_id)
                             logger.info(f"✅ Site-клиент {panel_username} добавлен")
@@ -327,10 +321,7 @@ class X3:
                         # Сервер мог не вернуть JSON, но статус успешный
                         logger.warning(f"Не удалось прочитать JSON при добавлении {user_id}: {e}. Считаем успехом.")
                         subscription_end_date = expire_time.replace(tzinfo=datetime.timezone.utc)
-                        if 'white' in user_id_str:
-                            await sql.update_white_subscription_end_date(user_id, subscription_end_date)
-                            await sql.update_white_subscription(user_id, client_id)
-                        else:
+                        if 'white' not in user_id_str:
                             await sql.update_subscription_end_date(user_id, subscription_end_date)
                             await sql.update_subscribtion(user_id, client_id)
                         logger.info(f"✅ Клиент {user_id} успешно добавлен (без JSON)")
@@ -338,10 +329,7 @@ class X3:
                     else:
                         if response_data.get("success", True):
                             subscription_end_date = expire_time.replace(tzinfo=datetime.timezone.utc)
-                            if 'white' in user_id_str:
-                                await sql.update_white_subscription_end_date(user_id, subscription_end_date)
-                                await sql.update_white_subscription(user_id, client_id)
-                            else:
+                            if 'white' not in user_id_str:
                                 await sql.update_subscription_end_date(user_id, subscription_end_date)
                                 await sql.update_subscribtion(user_id, client_id)
                             logger.info(f"✅ Клиент {user_id} успешно добавлен")
@@ -511,17 +499,13 @@ class X3:
                         response_data = await response.json()
                     except (aiohttp.ClientConnectionError, aiohttp.ContentTypeError, ValueError) as e:
                         logger.warning(f"Не удалось прочитать JSON при обновлении {user_id}: {e}. Считаем успехом.")
-                        if 'white' in user_id_str:
-                            await sql.update_white_subscription_end_date(user_id, new_expire_at)
-                        else:
+                        if 'white' not in user_id_str:
                             await sql.update_subscription_end_date(user_id, new_expire_at)
                         logger.info(f"✅ Клиент {user_id} успешно обновлён (без JSON), добавлено {day} дней")
                         return True
                     else:
                         if response_data.get("success", True):
-                            if 'white' in user_id_str:
-                                await sql.update_white_subscription_end_date(user_id, new_expire_at)
-                            else:
+                            if 'white' not in user_id_str:
                                 await sql.update_subscription_end_date(user_id, new_expire_at)
                             logger.info(f"✅ Клиент {user_id} успешно обновлён, добавлено {day} дней")
                             return True

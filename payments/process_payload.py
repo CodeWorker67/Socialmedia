@@ -53,9 +53,11 @@ async def _credit_partner_commission(payer_uid: int, method: str, amount: int | 
     """Начисляет PARTNER_PROCENT% партнёру, если плательщик пришёл по partner-ссылке."""
     try:
         user_row = await sql.get_user(payer_uid)
-        if not user_row or len(user_row) <= 29:
+        from config_bd.utils import USER_IX_PARTNER
+
+        if not user_row or len(user_row) <= USER_IX_PARTNER:
             return
-        partner_str = user_row[29]
+        partner_str = user_row[USER_IX_PARTNER]
         if not partner_str:
             return
         partner_id = int(partner_str)
@@ -255,9 +257,7 @@ async def process_confirmed_payment(payload) -> bool:
             if subscription_time != '-':
                 try:
                     subscription_end_date = datetime.strptime(subscription_time, '%d-%m-%Y %H:%M МСК')
-                    if white_flag:
-                        await sql.update_white_subscription_end_date(user_id, subscription_end_date)
-                    else:
+                    if not white_flag:
                         await sql.update_subscription_end_date(user_id, subscription_end_date)
                     logger.info(f"✅ Дата подписки обновлена: {subscription_end_date}")
                 except ValueError as e:

@@ -26,6 +26,14 @@ from payments.pay_freekassa import FreekassaPayment
 from payments.platega_recurrent import cancel_user_autopay
 from telegram_ids import is_telegram_chat_id
 from X3 import panel_username_for_site_user
+from config_bd.utils import (
+    USER_IX_EMAIL,
+    USER_IX_FIELD_BOOL_2,
+    USER_IX_FIELD_STR_2,
+    USER_IX_LINKED_TELEGRAM,
+    USER_IX_STAMP,
+    USER_IX_SUBSCRIPTION_END,
+)
 from wl_traffic.service import (
     fetch_panel_user,
     fetch_wl_traffic_gb_for_day,
@@ -171,9 +179,9 @@ def _admin_command_parts(text: Optional[str], command: str) -> Optional[list[str
 def _panel_usernames_from_row(row: tuple) -> tuple[str, str]:
     """Пара username в панели: обычная, вайт (как в web_api._panel_vpn_usernames)."""
     tg_col = row[1]
-    linked = row[28]
-    stamp = row[14]
-    field_str_2 = row[22]
+    linked = row[USER_IX_LINKED_TELEGRAM]
+    stamp = row[USER_IX_STAMP]
+    field_str_2 = row[USER_IX_FIELD_STR_2]
     tg = None
     if tg_col is not None and int(tg_col) > 0:
         tg = int(tg_col)
@@ -194,7 +202,7 @@ def _panel_usernames_from_row(row: tuple) -> tuple[str, str]:
 def _notify_chat_id_from_row(row: tuple) -> Optional[int]:
     """chat_id для ЛС: user_id Telegram или привязанный linked_telegram_id."""
     tg_col = row[1]
-    linked = row[28]
+    linked = row[USER_IX_LINKED_TELEGRAM]
     if tg_col is not None and is_telegram_chat_id(tg_col):
         return int(tg_col)
     if linked is not None and is_telegram_chat_id(linked):
@@ -323,8 +331,7 @@ async def pay_info_command(message: Message):
         return
 
     reg_un, white_un = _panel_usernames_from_row(user_row)
-    sub_db = user_row[9]
-    white_db = user_row[10]
+    sub_db = user_row[USER_IX_SUBSCRIPTION_END]
 
     try:
         ar_reg, ar_white = await asyncio.gather(
@@ -351,10 +358,9 @@ async def pay_info_command(message: Message):
 
     body = (
         f"<b>/pay {target_id}</b>\n\n"
-        f"Подписка обычная в БД бота — {_pay_dt_str(sub_db)}\n"
-        f"Подписка обычная в панели — {_pay_panel_sub_line(ar_reg)}\n"
-        f"Подписка вайт в БД бота — {_pay_dt_str(white_db)}\n"
-        f"Подписка вайт в панели — {_pay_panel_sub_line(ar_white)}\n\n"
+        f"Подписка в БД бота — {_pay_dt_str(sub_db)}\n"
+        f"Подписка в панели — {_pay_panel_sub_line(ar_reg)}\n"
+        f"Подписка white в панели — {_pay_panel_sub_line(ar_white)}\n\n"
         f"📡 <b>Антиглушилка (WL-трафик)</b>\n"
         f"├ Лимит: <b>{limit_wl:.2f} GB</b>\n"
         f"├ Использовано: <b>{used_wl_gb:.2f} GB</b>\n"
@@ -470,7 +476,7 @@ async def partner_remove_command(message: Message):
 
 @router.message(F.text.regexp(r"(?i)^/sub(?:@\w+)?(?:\s|$|-)"))
 async def set_subscription_date(message: Message):
-    """Установка subscription_end_date или white_subscription_end_date в БД и панели"""
+    """Установка subscription_end_date в БД и панели (white — только панель)."""
     if message.from_user.id not in ADMIN_IDS:
         return
 
@@ -532,8 +538,8 @@ async def set_subscription_date(message: Message):
         if not is_telegram_chat_id(user_id):
             existing = await x3.get_user_by_username(username)
             if not existing or "response" not in existing or not existing["response"]:
-                email = user_data[18]
-                stamp = user_data[14]
+                email = user_data[USER_IX_EMAIL]
+                stamp = user_data[USER_IX_STAMP]
                 if stamp != "gift" and email:
                     created = await x3.add_client_site(0, str(email), is_white, user_id)
                     if not created:
@@ -549,9 +555,7 @@ async def set_subscription_date(message: Message):
             await message.answer("❌ Не удалось установить дату в панели. Подробности в логах.")
             return
 
-        if is_white:
-            await sql.update_white_subscription_end_date(user_id, actual_date)
-        else:
+        if not is_white:
             await sql.update_subscription_end_date(user_id, actual_date)
 
         autopay_cancelled = await cancel_user_autopay(user_id, reason='admin_sub')
@@ -815,7 +819,7 @@ async def sync_panel(message: Message):
 
 @router.message(Command(commands=['shortuuid_export']))
 async def shortuuid_export(message: Message):
-    """Синхронизация shortUuid из панели в поля subscribtion / white_subscription в БД."""
+    """Синхронизация shortUuid из панели в поле subscribtion в БД."""
     if message.from_user.id not in ADMIN_IDS:
         return
 
@@ -829,7 +833,7 @@ async def shortuuid_export(message: Message):
         return
 
     updated_sub = 0
-    updated_white = 0
+    skip_white = 0
     skip_no_db = 0
     skip_no_tg = 0
     skip_no_short = 0
@@ -860,11 +864,10 @@ async def shortuuid_export(message: Message):
         is_white = "white" in username
         try:
             if is_white:
-                await sql.update_white_subscription(tg_id, short_uuid)
-                updated_white += 1
-            else:
-                await sql.update_subscribtion(tg_id, short_uuid)
-                updated_sub += 1
+                skip_white += 1
+                continue
+            await sql.update_subscribtion(tg_id, short_uuid)
+            updated_sub += 1
             logger.success(f"shortuuid_export user {tg_id}: {short_uuid}")
         except Exception as e:
             errors += 1
@@ -874,7 +877,7 @@ async def shortuuid_export(message: Message):
         f"✅ Готово.\n"
         f"📊 В панели записей: {len(panel_users)}\n"
         f"📝 subscribtion обновлено: {updated_sub}\n"
-        f"📝 white_subscription обновлено: {updated_white}\n"
+        f"⏭ white username (без записи в БД): {skip_white}\n"
         f"⏭ без telegramId/username: {skip_no_tg}\n"
         f"⏭ без shortUuid: {skip_no_short}\n"
         f"⏭ нет в БД: {skip_no_db}\n"
@@ -1391,7 +1394,9 @@ async def add_traffic_command(message: Message):
     squad_note = ""
     if panel_user:
         user_row_after = await sql.get_user(target_id)
-        field_bool_2 = bool(user_row_after[25]) if user_row_after else False
+        field_bool_2 = (
+            bool(user_row_after[USER_IX_FIELD_BOOL_2]) if user_row_after else False
+        )
         if (
             user_on_limited_squad(panel_user)
             and limit_wl > used_gb
@@ -1623,7 +1628,7 @@ async def add_7_sub_command(message: Message):
             await asyncio.sleep(0.1)
             continue
 
-        if user_data[9] is None:
+        if user_data[USER_IX_SUBSCRIPTION_END] is None:
             skipped_no_sub += 1
             await asyncio.sleep(0.05)
             continue
@@ -2118,14 +2123,11 @@ async def send_push_command(message: Message):
                 short_uuid = user.get('shortUuid')
                 if short_uuid:
                     username_panel = user.get('username') or ''
-                    is_white = 'white' in username_panel
-                    try:
-                        if is_white:
-                            await sql.update_white_subscription(user_id, short_uuid)
-                        else:
+                    if 'white' not in username_panel:
+                        try:
                             await sql.update_subscribtion(user_id, short_uuid)
-                    except Exception as e:
-                        logger.error(f"send_push: запись shortUuid для {user_id}: {e}")
+                        except Exception as e:
+                            logger.error(f"send_push: запись shortUuid для {user_id}: {e}")
 
                 continue
             await x3.addClient(5, str(user_id), int(user_id))

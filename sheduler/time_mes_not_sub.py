@@ -4,6 +4,7 @@ from typing import Optional
 
 from bot import bot, sql
 from config import CHECKER_ID
+from config_bd.utils import USER_IX_SUBSCRIPTION_END
 from keyboard import create_kb, STYLE_PRIMARY
 from lexicon import lexicon
 from logging_config import logger
@@ -53,17 +54,10 @@ NOT_CONNECT_STAGES = (
 )
 
 
-_USER_TUPLE_SUBSCRIPTION_END_DATE = 9
-_USER_TUPLE_WHITE_SUBSCRIPTION_END_DATE = 10
-
-
 def _max_subscription_end_date(user_data: tuple) -> Optional[datetime]:
-    dates = [
-        user_data[_USER_TUPLE_SUBSCRIPTION_END_DATE],
-        user_data[_USER_TUPLE_WHITE_SUBSCRIPTION_END_DATE],
-    ]
-    active_dates = [d for d in dates if d is not None]
-    return max(active_dates) if active_dates else None
+    if len(user_data) <= USER_IX_SUBSCRIPTION_END:
+        return None
+    return user_data[USER_IX_SUBSCRIPTION_END]
 
 
 def _find_stage(offset_minutes: int, stages: tuple[PushStage, ...]) -> Optional[PushStage]:
@@ -127,7 +121,7 @@ async def send_push_cron(debug: bool = False):
     Push по этапам после регистрации (create_user), без циклов — только первые 7 дней:
     1) Нет в панели (in_panel=False) — 9 сообщений по расписанию, затем стоп.
     2) В панели, но VPN не подключён (is_connect=False) и максимальная дата
-       подписки (PRO / white) больше текущей — день 1: 3 пуша;
+       подписки (PRO) больше текущей — день 1: 3 пуша;
        дни 2–7: по одному пушу (ротация текстов 1→2→3), затем стоп.
     """
     try:

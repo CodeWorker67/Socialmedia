@@ -4,6 +4,7 @@ import requests
 from datetime import datetime, timezone
 
 from bot import sql, x3, bot
+from config_bd.utils import USER_IX_SUBSCRIPTION_END
 from lead_tracker import post_user_registered, post_user_trial, tracker_source_from_ref_and_stamp
 from config import CHANEL_ID, ADMIN_IDS, BOT_URL, PARTNER_PROCENT, PARTNER_MIN, PARTNER_SUPPORT_URL, PUBLIC_SITE_URL, CHECKER_ID
 from keyboard import (keyboard_tariff_bonus, keyboard_tariff,
@@ -56,7 +57,6 @@ router: Router = Router()
 
 _BROADCAST_TRIAL_DAYS = 7
 _TRIAL_RETURN_GET_CB = "trial_return_get"
-_USER_TUPLE_SUBSCRIPTION_END_DATE = 9
 
 _R120_PAYMENT_TEXT = (
     "🎁 Акция: 3 + 1 месяц в подарок!\n"
@@ -69,7 +69,7 @@ _R120_PAYMENT_TEXT = (
 
 
 def _user_has_active_pro_subscription(user_data: tuple) -> bool:
-    sub_end = user_data[_USER_TUPLE_SUBSCRIPTION_END_DATE]
+    sub_end = user_data[USER_IX_SUBSCRIPTION_END]
     if sub_end is None:
         return False
     if sub_end.tzinfo is None:

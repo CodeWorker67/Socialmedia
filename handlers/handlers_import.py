@@ -3,6 +3,7 @@ from aiogram.exceptions import TelegramBadRequest
 from aiogram.types import CallbackQuery, InputMediaPhoto
 
 from bot import bot, sql, x3
+from config_bd.utils import USER_IX_SUBSCRIPTION_END
 from keyboard import (
     keyboard_import_os,
     keyboard_import_app,
@@ -174,7 +175,11 @@ async def import_select_app(callback: CallbackQuery):
 )
 async def import_select_app_finish(callback: CallbackQuery):
     user_data = await sql.get_user(callback.from_user.id)
-    has_sub = bool(user_data and user_data[9])
+    has_sub = bool(
+        user_data
+        and len(user_data) > USER_IX_SUBSCRIPTION_END
+        and user_data[USER_IX_SUBSCRIPTION_END]
+    )
 
     if not has_sub:
         await callback.answer()

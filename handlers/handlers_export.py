@@ -45,7 +45,7 @@ _EXCEL_COL_WIDTH_MAX = 255
 _USERS_EXPORT_COLUMNS_DEFAULT = (
     'id', 'user_id', 'ref', 'is_delete', 'in_panel', 'is_connect',
     'create_user', 'reserve_field', 'subscription_end_date',
-    'white_subscription_end_date', 'last_notification_date',
+    'last_notification_date',
     'last_broadcast_status', 'last_broadcast_date', 'stamp', 'ttclid',
     'field_bool_3',
 )
@@ -532,10 +532,6 @@ async def _export_database_to_excel_impl(message: Message, *, users_full_columns
         payments_wata_card_count = len(payments_wata_card_list)
         platega_autopay_count = len(platega_autopay_list)
         platega_recurent_count = len(platega_recurent_list)
-        white_subscription_count = sum(
-            1 for u in users_list if u.white_subscription_end_date is not None
-        )
-
         successful_payments_count = sum(1 for p in payments_list if p.status == "confirmed")
         successful_cards_count = sum(1 for p in payments_cards_list if p.status == "confirmed")
         successful_platega_crypto_count = sum(
@@ -577,7 +573,6 @@ async def _export_database_to_excel_impl(message: Message, *, users_full_columns
                 f"├ 💎 Платежей Криптоботом: {successful_cryptobot_count}/{payments_cryptobot_count}\n"
                 f"├ 🔄 Автоподписок Platega (активных): {platega_autopay_active_count}/{platega_autopay_count}\n"
                 f"├ 🔄 Списаний Platega рекуррент: {platega_recurent_confirmed_count}/{platega_recurent_count}\n"
-                f"├ ⚪ White-подписок: {white_subscription_count}\n"
                 f"└ 👁 White-кликов: {white_counter_count}"
             )
             await message.answer_document(

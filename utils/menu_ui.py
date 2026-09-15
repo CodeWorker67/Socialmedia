@@ -16,6 +16,7 @@ from aiogram.types import (
 )
 
 from bot import bot, sql, x3
+from config_bd.utils import USER_IX_SUBSCRIPTION_END
 from lexicon import lexicon
 from logging_config import logger
 from utils.menu_photos import menu_photo
@@ -25,10 +26,6 @@ MAIN_MENU_REPLY_TEXT = (
     "Кнопка <b>Главное меню</b> внизу — нажмите её, чтобы в любой момент вернуться в главное меню."
 )
 MAIN_MENU_BUTTON_TEXT = "Главное меню"
-
-_USER_TUPLE_SUBSCRIPTION_END_DATE = 9
-_USER_TUPLE_WHITE_SUBSCRIPTION_END_DATE = 10
-
 
 def reply_keyboard_main_menu() -> ReplyKeyboardMarkup:
     from keyboard import STYLE_PRIMARY
@@ -74,32 +71,21 @@ def end_date_status_text(sub_end) -> str:
 
 
 def subscription_status_text(user_data: Optional[tuple]) -> str:
-    if not user_data or len(user_data) <= _USER_TUPLE_SUBSCRIPTION_END_DATE:
+    if not user_data or len(user_data) <= USER_IX_SUBSCRIPTION_END:
         return "Нет подписки"
-    return end_date_status_text(user_data[_USER_TUPLE_SUBSCRIPTION_END_DATE])
+    return end_date_status_text(user_data[USER_IX_SUBSCRIPTION_END])
 
 
 def profile_subscription_status_text(user_data: Optional[tuple]) -> str:
     if not user_data:
         return "Нет подписки"
     pro_end = (
-        user_data[_USER_TUPLE_SUBSCRIPTION_END_DATE]
-        if len(user_data) > _USER_TUPLE_SUBSCRIPTION_END_DATE
+        user_data[USER_IX_SUBSCRIPTION_END]
+        if len(user_data) > USER_IX_SUBSCRIPTION_END
         else None
     )
-    white_end = (
-        user_data[_USER_TUPLE_WHITE_SUBSCRIPTION_END_DATE]
-        if len(user_data) > _USER_TUPLE_WHITE_SUBSCRIPTION_END_DATE
-        else None
-    )
-    if _end_is_active(pro_end):
-        return f"💫 VPN PRO: {end_date_status_text(pro_end)}"
-    if _end_is_active(white_end):
-        return f"📱 Мобильный тариф: {end_date_status_text(white_end)}"
     if pro_end is not None:
         return f"💫 VPN PRO: {end_date_status_text(pro_end)}"
-    if white_end is not None:
-        return f"📱 Мобильный тариф: {end_date_status_text(white_end)}"
     return "Нет подписки"
 
 
@@ -114,13 +100,8 @@ def _end_is_active(sub_end) -> bool:
 def has_active_subscription(user_data: Optional[tuple]) -> bool:
     if not user_data:
         return False
-    pro = user_data[_USER_TUPLE_SUBSCRIPTION_END_DATE] if len(user_data) > _USER_TUPLE_SUBSCRIPTION_END_DATE else None
-    white = (
-        user_data[_USER_TUPLE_WHITE_SUBSCRIPTION_END_DATE]
-        if len(user_data) > _USER_TUPLE_WHITE_SUBSCRIPTION_END_DATE
-        else None
-    )
-    return _end_is_active(pro) or _end_is_active(white)
+    pro = user_data[USER_IX_SUBSCRIPTION_END] if len(user_data) > USER_IX_SUBSCRIPTION_END else None
+    return _end_is_active(pro)
 
 
 def profile_caption(
