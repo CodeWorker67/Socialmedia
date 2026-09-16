@@ -393,7 +393,11 @@ class AsyncSQL:
             return nxt
 
     async def register_email_user(
-        self, email: str, password_hash: str, stamp: str = "email"
+        self,
+        email: str,
+        password_hash: str,
+        stamp: str = "email",
+        partner: Optional[str] = None,
     ) -> int:
         em = _norm_email(email)
         uid = await self.next_negative_user_id()
@@ -403,6 +407,7 @@ class AsyncSQL:
                 email=em,
                 password_hash=password_hash,
                 stamp=stamp,
+                partner=partner or None,
                 create_user=datetime.now(),
             )
             session.add(u)
@@ -421,6 +426,38 @@ class AsyncSQL:
             if current and current != "email":
                 return False
             user.stamp = stamp
+            await session.commit()
+            return True
+
+    async def set_user_partner_by_internal_id(self, internal_id: int, partner: str) -> bool:
+        """Записывает partner только если поле ещё пустое (first-touch)."""
+        p = (partner or "").strip()
+        if not p:
+            return False
+        async with self.session_factory() as session:
+            result = await session.execute(select(Users).where(Users.id == internal_id))
+            user = result.scalar_one_or_none()
+            if user is None:
+                return False
+            if (user.partner or "").strip():
+                return False
+            user.partner = p
+            await session.commit()
+            return True
+
+    async def set_user_partner_if_empty(self, user_id: int, partner: str) -> bool:
+        """По Telegram user_id (положительный id в users.user_id)."""
+        p = (partner or "").strip()
+        if not p:
+            return False
+        async with self.session_factory() as session:
+            result = await session.execute(select(Users).where(Users.user_id == user_id))
+            user = result.scalar_one_or_none()
+            if user is None:
+                return False
+            if (user.partner or "").strip():
+                return False
+            user.partner = p
             await session.commit()
             return True
 
@@ -544,6 +581,8 @@ class AsyncSQL:
             t.reserve_field = bool(t.reserve_field or e.reserve_field)
             if not (t.ref or "") and (e.ref or ""):
                 t.ref = e.ref
+            if not (t.partner or "") and (e.partner or ""):
+                t.partner = e.partner
             if merged_email:
                 t.email = merged_email
             if merged_password_hash:

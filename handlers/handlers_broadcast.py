@@ -81,6 +81,7 @@ CUSTOM_PRESETS = [
     ("ref", "ref", "👭 Реферальная программа", None),
     ("buy_gift", "buy_gift", "🎁 Подарить подписку", None),
     ("ref_invite", "ref_invite", "Пригласить друзей🫶", None),
+    ("partner_earn", "partner_earn", "💵Заработай с нами!", None),
     ("r_7", "r_7", "👌 7 дней - 99 руб", None),
     ("r_30", "r_30", "🤝 1 месяц - 299 руб", None),
     ("r_90", "r_90", "✅ 3 месяца - 749 руб (выгода -16%)", None),

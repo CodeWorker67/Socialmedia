@@ -10,7 +10,8 @@ from config import CHANEL_ID, ADMIN_IDS, BOT_URL, PARTNER_PROCENT, PARTNER_MIN, 
 from keyboard import (keyboard_tariff_bonus, keyboard_tariff,
                       ref_keyboard, keyboard_gift_tariff, keyboard_payment_method,
                       keyboard_payment_method_stock,
-                      keyboard_inline_ref, keyboard_partner_intro, keyboard_partner_dashboard,
+                      keyboard_inline_ref, keyboard_inline_partner, keyboard_partner_dashboard,
+                      partner_bot_link, partner_site_link,
                       keyboard_partner_withdraw, keyboard_buy_menu, keyboard_earn_with_us,
                       create_kb, STYLE_PRIMARY, OPEN_SITE_CB, SITE_URL,
                       keyboard_subscription_manage, keyboard_sub_after_buy,
@@ -576,21 +577,29 @@ async def _send_partner_dashboard(callback: CallbackQuery) -> None:
     balance = user.partner_balance or 0
     paid_out = user.partner_pay or 0
     total_earned = balance + paid_out
-    link = f"{BOT_URL}?start=partner_{tg_id}"
+    bot_link = partner_bot_link(tg_id)
+    site_link = partner_site_link(tg_id)
+    site_block = (
+        f'🌐 <b>Сайт:</b>\n└ <code>{site_link}</code>\n\n'
+        if site_link
+        else ''
+    )
 
     await edit_or_send_photo(
         callback,
         "earn_with_us",
         lexicon['partner_dashboard'].format(
-            link=link,
+            bot_link=bot_link,
+            site_block=site_block,
             procent=PARTNER_PROCENT,
+            min_sum=PARTNER_MIN,
             referrals=referrals,
             payments_sum=payments_sum,
             total_earned=total_earned,
             paid_out=paid_out,
             balance=balance,
         ),
-        keyboard_partner_dashboard(),
+        keyboard_partner_dashboard(tg_id),
     )
 
 
@@ -598,27 +607,13 @@ async def _send_partner_dashboard(callback: CallbackQuery) -> None:
 async def partner_program(callback: CallbackQuery):
     await callback.answer()
     await _ensure_user_exists(callback.from_user.id)
-    user = await sql.get_user_object_by_user_id(callback.from_user.id)
-
-    if user and user.partner_flag:
-        await _send_partner_dashboard(callback)
-    else:
-        await edit_or_send_photo(
-            callback,
-            "earn_with_us",
-            lexicon['partner_intro'].format(
-                procent=PARTNER_PROCENT,
-                min_sum=PARTNER_MIN,
-            ),
-            keyboard_partner_intro(),
-        )
+    await _send_partner_dashboard(callback)
 
 
 @router.callback_query(F.data == 'partner_create_link')
 async def partner_create_link(callback: CallbackQuery):
     await callback.answer()
     await _ensure_user_exists(callback.from_user.id)
-    await sql.update_partner_flag(callback.from_user.id, True)
     await _send_partner_dashboard(callback)
 
 
@@ -809,11 +804,14 @@ async def handle_chat_member_update(update: ChatMemberUpdated):
 @router.inline_query(lambda query: query.query == 'partner')
 async def inline_partner(inline_query: InlineQuery):
     user_id = inline_query.from_user.id
+    bot_link = partner_bot_link(user_id)
+    site_link = partner_site_link(user_id)
+    site_line = f'\n🌐 Сайт: {site_link}' if site_link else ''
 
     text = f'''
-Привет. Подключись к Ускорителю соцсетей по моей ссылке:
+Привет. Подключись к <b>Ускорителю соцсетей</b> по моей партнёрской ссылке:
 
-{BOT_URL}?start=ref{user_id}
+🤖 Бот: {bot_link}{site_line}
 
 💥 Стабильный доступ к соцсетям
 💫 Без навязчивой рекламы (где доступно)
@@ -822,14 +820,14 @@ async def inline_partner(inline_query: InlineQuery):
 
     result = InlineQueryResultArticle(
         id="1",
-        title='🤝🤝🤝 Приглашение',
-        description="Друг, перешедший по этой кнопке станет Вашим рефералом.",
+        title='💸 Партнёрское приглашение',
+        description="Друг, перешедший по ссылке, станет вашим партнёрским рефералом.",
         input_message_content=InputTextMessageContent(
             message_text=text,
             parse_mode='HTML',
             disable_web_page_preview=False
         ),
-        reply_markup=keyboard_inline_ref(user_id),
+        reply_markup=keyboard_inline_partner(user_id),
         thumb_url="https://img.freepik.com/premium-photo/glowing-blue-neon-wifi-signal-icon-dark-background_989822-6238.jpg?semt=ais_hybrid",  # опционально: иконка
         thumb_width=50,
         thumb_height=50,

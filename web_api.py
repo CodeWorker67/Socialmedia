@@ -549,10 +549,12 @@ class TelegramAuthIn(BaseModel):
     last_name: Optional[str] = None
     username: Optional[str] = None
     photo_url: Optional[str] = None
+    partner: Optional[str] = None
 
 
 class BotLoginIn(BaseModel):
     token: str
+    partner: Optional[str] = None
 
 
 class CreatePaymentIn(BaseModel):
@@ -664,10 +666,38 @@ def _normalize_stamp(raw: Optional[str]) -> str:
     return "email"
 
 
+def _normalize_partner(raw: Optional[str], for_user_id: Optional[int] = None) -> Optional[str]:
+    if not raw or not str(raw).strip():
+        return None
+    s = str(raw).strip()
+    if s.startswith("partner_"):
+        s = s[len("partner_") :]
+    if not s.isdigit():
+        return None
+    pid = int(s)
+    if pid <= 0:
+        return None
+    if for_user_id is not None and pid == for_user_id:
+        return None
+    return str(pid)
+
+
+async def _apply_partner_for_tg_user(uid: int, partner_raw: Optional[str]) -> None:
+    partner = _normalize_partner(partner_raw, for_user_id=uid)
+    if not partner:
+        return
+    user_row = await sql.get_user(uid)
+    if user_row is None:
+        await sql.add_user(uid, False, False, partner=partner)
+    else:
+        await sql.set_user_partner_if_empty(uid, partner)
+
+
 class RegisterIn(BaseModel):
     email: EmailStr
     password: str = Field(min_length=6, max_length=256)
     stamp: Optional[str] = None
+    partner: Optional[str] = None
 
 
 class LoginIn(BaseModel):
@@ -687,6 +717,7 @@ class ResendCodeIn(BaseModel):
 class GoogleAuthIn(BaseModel):
     credential: str
     stamp: Optional[str] = None
+    partner: Optional[str] = None
 
 
 class ResetPasswordIn(BaseModel):
@@ -811,9 +842,7 @@ async def auth_bot_login(body: BotLoginIn, request: Request):
 
     tg_user = entry["telegram_user"]
     uid = int(tg_user["id"])
-    user_row = await sql.get_user(uid)
-    if user_row is None:
-        await sql.add_user(uid, False, False)
+    await _apply_partner_for_tg_user(uid, body.partner)
 
     del _bot_site_login_tokens[raw]
     jwt_token = _issue_jwt(user_id=uid, auth="telegram", username=tg_user.get("username"))
@@ -830,13 +859,12 @@ async def auth_bot_login(body: BotLoginIn, request: Request):
 
 @app.post("/api/auth/telegram")
 async def auth_telegram(body: TelegramAuthIn, request: Request):
+    partner_raw = body.partner
     data = body.model_dump(exclude_none=True)
+    data.pop("partner", None)
     _verify_telegram_login(data)
     uid = body.id
-
-    user_row = await sql.get_user(uid)
-    if user_row is None:
-        await sql.add_user(uid, False, False)
+    await _apply_partner_for_tg_user(uid, partner_raw)
 
     secret = _require_jwt_secret()
     exp = datetime.now(timezone.utc) + timedelta(hours=24)
@@ -1484,6 +1512,7 @@ async def auth_register(body: RegisterIn, request: Request):
     client_ip = request.headers.get("x-real-ip", request.client.host)
     _rate_limit_or_raise(client_ip, "register", max_req=5, window=300)
     stamp = _normalize_stamp(body.stamp)
+    partner = _normalize_partner(body.partner)
     existing = await sql.get_user_by_email(str(body.email))
     if existing:
         email_verified = bool(existing[USER_IX_FIELD_BOOL_1])
@@ -1494,10 +1523,12 @@ async def auth_register(body: RegisterIn, request: Request):
             current_stamp = (existing[USER_IX_STAMP] or "").strip()
             if not current_stamp or current_stamp == "email":
                 await sql.set_user_stamp_by_internal_id(int(existing[0]), stamp)
+        if partner:
+            await sql.set_user_partner_by_internal_id(int(existing[0]), partner)
         await _send_verification_code(str(body.email))
         return {"success": True, "requires_verification": True, "email": str(body.email).strip().lower()}
     h = _hash_password(body.password)
-    internal_id = await sql.register_email_user(str(body.email), h, stamp=stamp)
+    internal_id = await sql.register_email_user(str(body.email), h, stamp=stamp, partner=partner)
     em = str(body.email).strip().lower()
     await _send_verification_code(em)
     return {"success": True, "requires_verification": True, "email": em}
@@ -1571,11 +1602,15 @@ async def auth_google(body: GoogleAuthIn, request: Request):
     if row is None:
         # Create new user, already verified (Google verified email)
         stamp = _normalize_stamp(body.stamp)
+        partner = _normalize_partner(body.partner)
         h = _hash_password(secrets.token_hex(32))  # random password
-        internal_id = await sql.register_email_user(em, h, stamp=stamp)
+        internal_id = await sql.register_email_user(em, h, stamp=stamp, partner=partner)
         await sql.set_email_verified(internal_id, True)
     else:
         internal_id = int(row[0])
+        partner = _normalize_partner(body.partner)
+        if partner:
+            await sql.set_user_partner_by_internal_id(internal_id, partner)
         # Ensure email_verified is set
         if not bool(row[USER_IX_FIELD_BOOL_1]):
             await sql.set_email_verified(internal_id, True)
