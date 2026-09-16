@@ -411,13 +411,15 @@ async def _issue_broadcast_trial(callback: CallbackQuery) -> bool:
 
 
 async def _handle_broadcast_trial_claim(callback: CallbackQuery) -> None:
+    await callback.answer("Акция закончилась", show_alert=True)
+    return
     uid = callback.from_user.id
-    if not await sql.claim_broadcast_trial(uid):
-        await callback.answer("Вы уже воспользовались триалом", show_alert=True)
-        return
+    # if not await sql.claim_broadcast_trial(uid):
+    #     await callback.answer("Вы уже воспользовались триалом", show_alert=True)
+    #     return
 
-    await callback.answer()
-    await _issue_broadcast_trial(callback)
+    # await callback.answer()
+    # await _issue_broadcast_trial(callback)
 
 
 @router.callback_query(F.data == "get_trial")
