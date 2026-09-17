@@ -97,6 +97,10 @@ _ADD2BONUS_YES_CB = "add2bonus_yes"
 _ADD2BONUS_NO_CB = "add2bonus_no"
 _ADD2BONUS_PROGRESS_EVERY = 1000
 
+_DEL_OLD_CREATED_CUTOFF = datetime(2026, 8, 30, 23, 59, 59)
+_DEL_OLD_YES_CB = "del_old_yes"
+_DEL_OLD_NO_CB = "del_old_no"
+
 _ADD2BONUS_TEXT = (
     "Дорогие друзья! 👋\n\n"
     "Мы столкнулись со <b>сбоем работы страницы подписки</b>.\n"
@@ -655,6 +659,115 @@ async def delete_user_command(message: Message):
     except Exception as e:
         logger.error(f"Ошибка в команде /delete: {e}")
         await message.answer(f"❌ Произошла ошибка при выполнении команды: {str(e)}")
+
+
+@router.message(Command(commands=["del_old"]))
+async def del_old_command(message: Message):
+    """
+    Массовое удаление «старых» пользователей из users:
+    in_panel=False, is_connect=False, без subscription_end_date,
+    create_user не позже 30.08.2026, без успешных оплат.
+    """
+    if message.from_user.id not in ADMIN_IDS:
+        return
+
+    n = await sql.count_del_old_users(_DEL_OLD_CREATED_CUTOFF)
+    if n == 0:
+        await message.answer(
+            "Нет пользователей, подходящих под критерии /del_old:\n"
+            "• in_panel = False\n"
+            "• is_connect = False\n"
+            "• subscription_end_date пусто\n"
+            f"• create_user ≤ {_DEL_OLD_CREATED_CUTOFF:%d.%m.%Y %H:%M:%S}\n"
+            "• нет успешных оплат во всех таблицах платежей"
+        )
+        return
+
+    confirm_kb = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="✅ Да, удалить",
+                    callback_data=_DEL_OLD_YES_CB,
+                    style=STYLE_DANGER,
+                ),
+                InlineKeyboardButton(
+                    text="❌ Отмена",
+                    callback_data=_DEL_OLD_NO_CB,
+                    style=STYLE_PRIMARY,
+                ),
+            ]
+        ]
+    )
+    await message.answer(
+        f"📋 <b>/del_old</b>\n\n"
+        f"Будет удалено из таблицы <b>users</b>: <b>{n}</b> чел.\n\n"
+        f"Условия:\n"
+        f"• in_panel = False\n"
+        f"• is_connect = False\n"
+        f"• subscription_end_date = NULL\n"
+        f"• дата регистрации не позже {_DEL_OLD_CREATED_CUTOFF:%d.%m.%Y}\n"
+        f"• нет успешных платежей (confirmed / paid)\n\n"
+        f"⚠️ Удаление только из БД бота (как /delete).\n"
+        f"Подтвердите действие.",
+        reply_markup=confirm_kb,
+        parse_mode="HTML",
+    )
+
+
+@router.callback_query(F.data == _DEL_OLD_NO_CB)
+async def del_old_cancel(callback: CallbackQuery):
+    if callback.from_user.id not in ADMIN_IDS:
+        await callback.answer("Нет доступа.", show_alert=True)
+        return
+    await callback.answer()
+    await callback.message.edit_text(
+        "Удаление /del_old отменено.",
+        reply_markup=None,
+    )
+
+
+@router.callback_query(F.data == _DEL_OLD_YES_CB)
+async def del_old_confirm(callback: CallbackQuery):
+    if callback.from_user.id not in ADMIN_IDS:
+        await callback.answer("Нет доступа.", show_alert=True)
+        return
+
+    await callback.answer()
+    n_before = await sql.count_del_old_users(_DEL_OLD_CREATED_CUTOFF)
+    if n_before == 0:
+        await callback.message.edit_text(
+            "Список пуст. Повторите /del_old.",
+            reply_markup=None,
+        )
+        return
+
+    await callback.message.edit_text(
+        f"⏳ /del_old: удаление {n_before} пользователей…",
+        reply_markup=None,
+    )
+
+    try:
+        deleted = await sql.delete_del_old_users(_DEL_OLD_CREATED_CUTOFF)
+    except Exception as e:
+        logger.error(f"Ошибка в /del_old: {e}")
+        await callback.message.answer(f"❌ Ошибка при удалении: {e}")
+        return
+
+    n_after = await sql.count_del_old_users(_DEL_OLD_CREATED_CUTOFF)
+    await callback.message.answer(
+        f"Готово (/del_old).\n"
+        f"• К удалению было: {n_before}\n"
+        f"• Удалено строк: {deleted}\n"
+        f"• Осталось по тем же критериям: {n_after}"
+    )
+    logger.info(
+        "Админ %s: del_old before=%s deleted=%s after=%s",
+        callback.from_user.id,
+        n_before,
+        deleted,
+        n_after,
+    )
 
 
 @router.message(Command("online"))

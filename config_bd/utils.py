@@ -1250,6 +1250,41 @@ class AsyncSQL:
             result = await session.execute(stmt)
             return [row[0] for row in result.all()]
 
+    def _billing_ok_payers_subquery(self):
+        """user_id с хотя бы одной успешной оплатой во всех таблицах платежей."""
+        stmt = select(Payments.user_id).where(Payments.status.in_(_BILLING_OK_STATUSES))
+        for model in _MERGE_PAYMENT_MODELS[1:]:
+            stmt = stmt.union(
+                select(model.user_id).where(model.status.in_(_BILLING_OK_STATUSES))
+            )
+        return stmt.subquery()
+
+    def _del_old_users_conditions(self, created_cutoff: datetime):
+        paid_subq = self._billing_ok_payers_subquery()
+        return (
+            Users.in_panel.is_(False),
+            Users.is_connect.is_(False),
+            Users.subscription_end_date.is_(None),
+            Users.create_user <= created_cutoff,
+            Users.user_id.notin_(paid_subq),
+        )
+
+    async def count_del_old_users(self, created_cutoff: datetime) -> int:
+        async with self.session_factory() as session:
+            stmt = select(func.count()).select_from(Users).where(
+                *self._del_old_users_conditions(created_cutoff)
+            )
+            return int((await session.execute(stmt)).scalar_one() or 0)
+
+    async def delete_del_old_users(self, created_cutoff: datetime) -> int:
+        async with self.session_factory() as session:
+            stmt = delete(Users).where(*self._del_old_users_conditions(created_cutoff))
+            result = await session.execute(stmt)
+            await session.commit()
+            deleted = int(result.rowcount or 0)
+            logger.info("✅ /del_old: удалено пользователей из users: {}", deleted)
+            return deleted
+
     _FOREVER_PAYMENT_AMOUNTS = (4990, 2790)
 
     @staticmethod
