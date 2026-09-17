@@ -1252,12 +1252,11 @@ class AsyncSQL:
 
     def _billing_ok_payers_subquery(self):
         """user_id с хотя бы одной успешной оплатой во всех таблицах платежей."""
-        stmt = select(Payments.user_id).where(Payments.status.in_(_BILLING_OK_STATUSES))
-        for model in _MERGE_PAYMENT_MODELS[1:]:
-            stmt = stmt.union(
-                select(model.user_id).where(model.status.in_(_BILLING_OK_STATUSES))
-            )
-        return stmt.subquery()
+        parts = [
+            select(model.user_id).where(model.status.in_(_BILLING_OK_STATUSES))
+            for model in _MERGE_PAYMENT_MODELS
+        ]
+        return union_all(*parts).subquery()
 
     def _del_old_users_conditions(self, created_cutoff: datetime):
         paid_subq = self._billing_ok_payers_subquery()
