@@ -46,6 +46,8 @@ class Users(Base):
     partner_flag = Column(Boolean, default=False)
     trafic_wl = Column(Float, default=0.0)
     limit_wl = Column(Float, default=0.0)
+    username = Column(String, nullable=True)
+    fullname = Column(String, nullable=True)
 
 
 class WlTrafficMeta(Base):

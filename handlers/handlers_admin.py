@@ -384,14 +384,24 @@ async def _partner_admin_stats_text(tg_id: int) -> Optional[str]:
     paid_out = user.partner_pay or 0
     total_earned = balance + paid_out
 
-    return (
-        f"📊 <b>Статистика {tg_id}:</b>\n\n"
-        f"👥 Друзей перешло (/start): <b>{referrals}</b>\n"
-        f"💳 Приобретено подписок друзьями на: <b>{payments_sum} ₽</b>\n\n"
-        f"💵 Заработок партнёра (всего): <b>{total_earned} ₽</b>\n"
-        f"✅ Выведено: <b>{paid_out} ₽</b>\n"
-        f"🏦 Осталось на вывод: <b>{balance} ₽</b>"
-    )
+    lines = [
+        f"📊 <b>Статистика партнёра {tg_id}:</b>\n",
+        f"👥 Перешло по партнёрской ссылке: <b>{referrals}</b>",
+        f"💳 Сумма оплат рефералов: <b>{payments_sum} ₽</b>\n",
+        f"💵 Заработок (всего): <b>{total_earned} ₽</b>",
+        f"✅ Выведено: <b>{paid_out} ₽</b>",
+        f"🏦 Осталось на вывод: <b>{balance} ₽</b>",
+    ]
+
+    top_rows, extra = await sql.get_partner_referrals_payment_totals(tg_id, limit=30)
+    if top_rows:
+        lines.append("\n<b>Оплаты партнёров</b>")
+        for uid, rub in top_rows:
+            lines.append(f"{uid} — {rub} руб")
+        if extra:
+            lines.append(f"\n<i>…и ещё {extra} партнёров</i>")
+
+    return "\n".join(lines)
 
 
 @router.message(Command(commands=['partner']))
@@ -1461,7 +1471,8 @@ async def add_traffic_command(message: Message):
     if len(args) < 3:
         await message.answer(
             "❌ Использование: /add_traffic <telegram_id> <GB>\n"
-            "Например: /add_traffic 123456789 10"
+            "Например: /add_traffic 123456789 10\n"
+            "Уменьшить лимит: /add_traffic 123456789 -5"
         )
         return
 
@@ -1472,8 +1483,8 @@ async def add_traffic_command(message: Message):
         await message.answer("❌ ID и количество GB должны быть числами.")
         return
 
-    if gb <= 0:
-        await message.answer("❌ Количество GB должно быть больше 0.")
+    if gb == 0:
+        await message.answer("❌ Укажите ненулевое изменение лимита в GB (можно отрицательное).")
         return
 
     user_row = await sql.get_user(target_id)
@@ -1505,8 +1516,9 @@ async def add_traffic_command(message: Message):
             else:
                 squad_note = "\n⚠️ Не удалось переназначить squad в панели"
 
+    gb_label = f"{gb:+g} GB".replace("+", "+")
     admin_text = (
-        f"✅ <b>Добавлено {gb:g} GB</b> для user <code>{target_id}</code>{squad_note}\n\n"
+        f"✅ <b>Изменение лимита {gb_label}</b> для user <code>{target_id}</code>{squad_note}\n\n"
         f"├ Использовано: <b>{used_gb:.2f} GB</b>\n"
         f"└ Лимит: <b>{limit_wl:.2f} GB</b>"
     )
@@ -1516,7 +1528,7 @@ async def add_traffic_command(message: Message):
         f"used={used_gb:.2f} limit={limit_wl:.2f}"
     )
 
-    if target_id > 0:
+    if target_id > 0 and gb > 0:
         try:
             await bot.send_message(
                 chat_id=target_id,
@@ -1530,7 +1542,7 @@ async def add_traffic_command(message: Message):
                 reply_markup=create_kb(1, back_to_main=BTN_BACK),
             )
         except Exception as e:
-            await message.answer(f"⚠️ Лимит добавлен, но push пользователю не отправлен: {e}")
+            await message.answer(f"⚠️ Лимит изменён, но push пользователю не отправлен: {e}")
             logger.error(f"/add_traffic: push uid={target_id}: {e}")
 
 
@@ -2360,3 +2372,8 @@ async def new_panel_command(message: Message):
     except Exception as e:
         logger.exception("Ошибка в /new_panel")
         await message.answer(f"❌ Ошибка: {str(e)}")
+
+
+from handlers.admin_find import router as _admin_find_router  # noqa: E402
+
+router.include_router(_admin_find_router)

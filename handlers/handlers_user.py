@@ -27,7 +27,7 @@ from utils.menu_ui import (
 from web_api import create_bot_site_login_token
 from logging_config import logger
 import asyncio
-from aiogram import Router, F
+from aiogram import Router, F, BaseMiddleware
 from aiogram.types import (
     Message,
     CallbackQuery,
@@ -37,7 +37,10 @@ from aiogram.types import (
     InputTextMessageContent,
     InlineKeyboardMarkup,
     InlineKeyboardButton,
+    TelegramObject,
+    User,
 )
+from typing import Any, Awaitable, Callable, Dict, Optional
 from aiogram.filters import ChatMemberUpdatedFilter, KICKED, MEMBER, Command
 from lexicon import lexicon
 from payments.tariff_gate import panel_days_from_tariff_key, tariff_key_from_callback, tariff_period_label
@@ -55,6 +58,52 @@ from wl_traffic.service import (
 
 
 router: Router = Router()
+
+
+def _telegram_fullname(tg_user: User) -> Optional[str]:
+    name = (tg_user.full_name or tg_user.first_name or "").strip()
+    return name or None
+
+
+async def _sync_user_profile_from_tg(tg_user: Optional[User]) -> None:
+    if tg_user is None:
+        return
+    await sql.sync_telegram_profile_if_missing(
+        tg_user.id,
+        tg_user.username,
+        _telegram_fullname(tg_user),
+    )
+
+
+def _tg_user_from_event(event: TelegramObject) -> Optional[User]:
+    if isinstance(event, ChatMemberUpdated):
+        return event.new_chat_member.user
+    return getattr(event, "from_user", None)
+
+
+class _SyncTelegramProfileMiddleware(BaseMiddleware):
+    async def __call__(
+        self,
+        handler: Callable[[TelegramObject, Dict[str, Any]], Awaitable[Any]],
+        event: TelegramObject,
+        data: Dict[str, Any],
+    ) -> Any:
+        tg_user = _tg_user_from_event(event)
+        await _sync_user_profile_from_tg(tg_user)
+        result = await handler(event, data)
+        await _sync_user_profile_from_tg(tg_user)
+        return result
+
+
+_profile_sync_middleware = _SyncTelegramProfileMiddleware()
+for _observer in (
+    router.message,
+    router.callback_query,
+    router.inline_query,
+    router.my_chat_member,
+    router.chat_member,
+):
+    _observer.middleware(_profile_sync_middleware)
 
 _BROADCAST_TRIAL_DAYS = 7
 _TRIAL_RETURN_GET_CB = "trial_return_get"

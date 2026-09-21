@@ -30,21 +30,16 @@ def _device_display_name(device: dict[str, Any]) -> str:
     model = (device.get("deviceModel") or "").strip()
     platform = (device.get("platform") or "").strip()
     os_version = (device.get("osVersion") or "").strip()
+    os_tail = " ".join(p for p in (platform, os_version) if p)
 
-    if model and platform:
-        name = f"{model} · {platform}"
-    elif model:
-        name = model
-    elif platform:
-        name = platform
-    else:
-        hwid = (device.get("hwid") or "устройство")[:12]
-        name = f"Устройство {hwid}"
-
-    if os_version:
-        name = f"{name} {os_version}"
-
-    return name
+    if model and os_tail:
+        return f"{model} · {os_tail}"
+    if model:
+        return model
+    if os_tail:
+        return os_tail
+    hwid = (device.get("hwid") or "устройство")[:12]
+    return f"Устройство {hwid}"
 
 
 def _device_button_label(device: dict[str, Any]) -> str:
