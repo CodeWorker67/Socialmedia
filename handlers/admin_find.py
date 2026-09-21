@@ -274,9 +274,8 @@ async def _build_find_message(tg_id: int, *, notice: str = "") -> tuple[str, Opt
 
     header = _format_user_header(user)
     body = await _format_find_body(user)
-    footer = "\n\n<i>Кнопки ниже: +дни и +ГБ для PRO-подписки (основной слот).</i>"
     notice_line = f"\n\n✅ {notice}" if notice else ""
-    text = f"{header}\n\n{body}{footer}{notice_line}"
+    text = f"{header}\n\n{body}{notice_line}"
     return text, _find_keyboard(tg_id)
 
 
