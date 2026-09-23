@@ -849,3 +849,39 @@ def keyboard_wl_traffic_payment_method(mb: str, *, back_callback: str = WL_TRAFF
         ],
         [InlineKeyboardButton(text=BTN_BACK, callback_data=back_callback)],
     ])
+
+
+def keyboard_contest_win_reveal() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🎁 Узнать свой приз", callback_data="cwin_reveal")],
+    ])
+
+
+def keyboard_contest_win_take() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🛍 Забрать скидку", callback_data="cwin_take")],
+    ])
+
+
+def keyboard_contest_win_urgency_buy() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🕒 Успеть оформить со скидкой", callback_data="cwin_buy")],
+    ])
+
+
+def keyboard_contest_win_reveal() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🎁 Узнать свой приз", callback_data="cwin_reveal")],
+    ])
+
+
+def keyboard_contest_win_take() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🛍 Забрать скидку", callback_data="cwin_take")],
+    ])
+
+
+def keyboard_contest_win_urgency_buy() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🕒 Успеть оформить со скидкой", callback_data="cwin_buy")],
+    ])

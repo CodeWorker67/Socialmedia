@@ -149,6 +149,7 @@ async def _panel_regular_subscription_is_active(uid: int) -> bool:
 async def process_start_command(message: Message, command: Command):
 
     user_data = await sql.get_user(message.from_user.id)
+    had_row_before = user_data is not None
     in_panel = False
     ref_login = ''
     partner_login = ''
@@ -298,6 +299,11 @@ async def process_start_command(message: Message, command: Command):
             logger.info(f'Юзеру {message.from_user.id} - {message.from_user.username} присвоен ttclid')
 
     await show_main_menu(message, send_hint=True)
+
+    if not had_row_before:
+        from handlers.handlers_contest_funnel import schedule_contest_win_funnel
+
+        schedule_contest_win_funnel(message.from_user.id)
 
 
 @router.message(F.text == MAIN_MENU_BUTTON_TEXT)
