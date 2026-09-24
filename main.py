@@ -6,7 +6,9 @@ from aiogram.types import BotCommand
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 from bot import bot
-from config import WEB_API_PORT
+from config import ADMIN_IDS, THROTTLE_MAX_UPDATES, THROTTLE_WINDOW_SEC, WEB_API_PORT
+from middleware.sync_tg_profile import SyncTgProfileMiddleware
+from middleware.user_throttle import UserThrottleMiddleware
 from utils.menu_photos import init_menu_photos
 from config_bd.models import create_tables, engine
 from config_bd.migrate_users_wl_fields import migrate as migrate_wl_fields
@@ -60,6 +62,14 @@ async def main() -> None:
 
     # Инициализация диспетчера
     dp: Dispatcher = Dispatcher()
+    dp.update.outer_middleware(
+        UserThrottleMiddleware(
+            max_per_window=THROTTLE_MAX_UPDATES,
+            window_sec=THROTTLE_WINDOW_SEC,
+            bypass_user_ids=ADMIN_IDS,
+        )
+    )
+    dp.update.outer_middleware(SyncTgProfileMiddleware())
     # Админ-команды (/export, /export_full, /partner, …) — до broadcast FSM,
     # иначе незавершённая рассылка перехватывает любой текст, включая /команды.
     dp.include_router(handlers_export.router)

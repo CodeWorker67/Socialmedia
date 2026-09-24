@@ -103,7 +103,6 @@ _DELETE_STAMP_YES_CB = "delete_stamp_yes"
 _DELETE_STAMP_NO_CB = "delete_stamp_no"
 _DELETE_OLD_YES_CB = "delete_old_yes"
 _DELETE_OLD_NO_CB = "delete_old_no"
-_BULK_DELETE_PROGRESS_EVERY = 1000
 _DELETE_OLD_MONTHS_DAYS = 30
 _pending_delete_stamp: dict[int, str] = {}
 
@@ -762,34 +761,13 @@ def _delete_confirm_keyboard(yes_cb: str, no_cb: str) -> InlineKeyboardMarkup:
     )
 
 
-async def _bulk_delete_from_bot_db(
-    admin_chat_id: int,
-    user_ids: list[int],
-    operation_label: str,
-) -> tuple[int, int, int]:
-    """Удаляет пользователей из БД бота; возвращает (в выборке, удалено, ошибок)."""
+async def _bulk_delete_from_bot_db(user_ids: list[int]) -> tuple[int, int, int]:
+    """Пакетное удаление users из БД бота; возвращает (в выборке, удалено, не удалено)."""
     total = len(user_ids)
-    deleted = 0
-    failed = 0
-    for processed, user_id in enumerate(user_ids, start=1):
-        if await sql.delete_from_db(user_id):
-            deleted += 1
-        else:
-            failed += 1
-        if processed % _BULK_DELETE_PROGRESS_EVERY == 0:
-            try:
-                await bot.send_message(
-                    admin_chat_id,
-                    f"{operation_label}: удалено {deleted} / {total} "
-                    f"(обработано {processed})",
-                )
-            except Exception as notify_err:
-                logger.warning(
-                    "%s: не удалось отправить прогресс админу: %s",
-                    operation_label,
-                    notify_err,
-                )
-        await asyncio.sleep(0.01)
+    if not total:
+        return 0, 0, 0
+    deleted = await sql.delete_users_from_db_by_ids(user_ids)
+    failed = max(0, total - deleted)
     return total, deleted, failed
 
 
@@ -866,12 +844,7 @@ async def delete_stamp_confirm(callback: CallbackQuery):
         parse_mode="HTML",
     )
 
-    admin_chat_id = callback.message.chat.id
-    total, deleted, failed = await _bulk_delete_from_bot_db(
-        admin_chat_id,
-        user_ids,
-        "delete_stamp",
-    )
+    total, deleted, failed = await _bulk_delete_from_bot_db(user_ids)
 
     await callback.message.answer(
         "✅ <b>/delete_stamp — отчёт</b>\n"
@@ -905,7 +878,7 @@ async def delete_old_command(message: Message):
         await message.answer(
             "Нет пользователей по условиям /delete_old:\n"
             "in_panel=False, is_connect=False, reserve_field=False, "
-            "subscription_end_date пусто, "
+            "subscription_end_date пусто, нет успешных оплат в БД, "
             f"create_user раньше {cutoff:%d.%m.%Y %H:%M}."
         )
         return
@@ -917,6 +890,7 @@ async def delete_old_command(message: Message):
         f"• не подключался (is_connect=False)\n"
         f"• не платил (reserve_field=False)\n"
         f"• subscription_end_date пусто\n"
+        f"• нет успешных оплат (confirmed / paid во всех таблицах платежей)\n"
         f"• регистрация до <b>{cutoff:%d.%m.%Y %H:%M}</b>\n\n"
         f"Найдено пользователей: <b>{n}</b>\n\n"
         f"Удалить их из БД бота?\n"
@@ -960,12 +934,7 @@ async def delete_old_confirm(callback: CallbackQuery):
         reply_markup=None,
     )
 
-    admin_chat_id = callback.message.chat.id
-    total, deleted, failed = await _bulk_delete_from_bot_db(
-        admin_chat_id,
-        user_ids,
-        "delete_old",
-    )
+    total, deleted, failed = await _bulk_delete_from_bot_db(user_ids)
 
     await callback.message.answer(
         "✅ <b>/delete_old — отчёт</b>\n"

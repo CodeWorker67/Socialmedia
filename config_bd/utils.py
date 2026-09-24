@@ -1744,6 +1744,22 @@ class AsyncSQL:
             logger.info(f"✅ Удалено пользователей: 1 (User_id: {user_id})")
             return True
 
+    async def delete_users_from_db_by_ids(self, user_ids: List[int]) -> int:
+        """Удаляет записи users пакетами; возвращает число удалённых строк."""
+        if not user_ids:
+            return 0
+        uniq = list({int(u) for u in user_ids})
+        deleted = 0
+        chunks = [uniq[i : i + _STAT_IN_CHUNK] for i in range(0, len(uniq), _STAT_IN_CHUNK)]
+        async with self.session_factory() as session:
+            for chunk in chunks:
+                stmt = delete(Users).where(Users.user_id.in_(chunk))
+                result = await session.execute(stmt)
+                deleted += int(result.rowcount or 0)
+            await session.commit()
+        logger.info("bulk delete users: requested=%s deleted=%s", len(uniq), deleted)
+        return deleted
+
     async def reset_all_delete_flag(self) -> int:
         """Устанавливает Is_delete = False для всех записей в таблице users."""
         async with self.session_factory() as session:
@@ -2405,8 +2421,24 @@ class AsyncSQL:
             return [row[0] for row in result.all()]
 
     async def select_user_ids_inactive_old(self, created_before: datetime) -> List[int]:
-        """Для /delete_old: не брал ключ, не подключался, не платил, без подписки, старые."""
+        """Для /delete_old: не брал ключ, не подключался, не платил, без подписки, старые, без успешных оплат."""
         async with self.session_factory() as session:
+            paid_subq = (
+                select(Payments.user_id)
+                .where(Payments.status == "confirmed")
+                .union(
+                    select(PaymentsStars.user_id).where(PaymentsStars.status == "confirmed"),
+                    select(PaymentsCryptobot.user_id).where(PaymentsCryptobot.status == "paid"),
+                    select(PaymentsCards.user_id).where(PaymentsCards.status == "confirmed"),
+                    select(PaymentsPlategaCrypto.user_id).where(
+                        PaymentsPlategaCrypto.status == "confirmed"
+                    ),
+                    select(PaymentsWataSBP.user_id).where(PaymentsWataSBP.status == "confirmed"),
+                    select(PaymentsWataCard.user_id).where(PaymentsWataCard.status == "confirmed"),
+                    select(PaymentsFkSBP.user_id).where(PaymentsFkSBP.status == "confirmed"),
+                )
+                .subquery()
+            )
             stmt = (
                 select(Users.user_id)
                 .where(
@@ -2415,6 +2447,7 @@ class AsyncSQL:
                     Users.reserve_field == False,
                     Users.subscription_end_date.is_(None),
                     Users.create_user < created_before,
+                    Users.user_id.notin_(paid_subq),
                 )
                 .order_by(Users.user_id)
             )
