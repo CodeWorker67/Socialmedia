@@ -1,3 +1,4 @@
+import html
 import random
 import re
 import os
@@ -98,9 +99,13 @@ _ADD2BONUS_YES_CB = "add2bonus_yes"
 _ADD2BONUS_NO_CB = "add2bonus_no"
 _ADD2BONUS_PROGRESS_EVERY = 1000
 
-_DEL_OLD_CREATED_CUTOFF = datetime(2026, 8, 30, 23, 59, 59)
-_DEL_OLD_YES_CB = "del_old_yes"
-_DEL_OLD_NO_CB = "del_old_no"
+_DELETE_STAMP_YES_CB = "delete_stamp_yes"
+_DELETE_STAMP_NO_CB = "delete_stamp_no"
+_DELETE_OLD_YES_CB = "delete_old_yes"
+_DELETE_OLD_NO_CB = "delete_old_no"
+_BULK_DELETE_PROGRESS_EVERY = 1000
+_DELETE_OLD_MONTHS_DAYS = 30
+_pending_delete_stamp: dict[int, str] = {}
 
 _ADD2BONUS_TEXT = (
     "Дорогие друзья! 👋\n\n"
@@ -738,112 +743,246 @@ async def delete_user_command(message: Message):
         await message.answer(f"❌ Произошла ошибка при выполнении команды: {str(e)}")
 
 
-@router.message(Command(commands=["del_old"]))
-async def del_old_command(message: Message):
-    """
-    Массовое удаление «старых» пользователей из users:
-    in_panel=False, is_connect=False, без subscription_end_date,
-    create_user не позже 30.08.2026, без успешных оплат.
-    """
-    if message.from_user.id not in ADMIN_IDS:
-        return
-
-    n = await sql.count_del_old_users(_DEL_OLD_CREATED_CUTOFF)
-    if n == 0:
-        await message.answer(
-            "Нет пользователей, подходящих под критерии /del_old:\n"
-            "• in_panel = False\n"
-            "• is_connect = False\n"
-            "• subscription_end_date пусто\n"
-            f"• create_user ≤ {_DEL_OLD_CREATED_CUTOFF:%d.%m.%Y %H:%M:%S}\n"
-            "• нет успешных оплат во всех таблицах платежей"
-        )
-        return
-
-    confirm_kb = InlineKeyboardMarkup(
+def _delete_confirm_keyboard(yes_cb: str, no_cb: str) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
         inline_keyboard=[
             [
                 InlineKeyboardButton(
-                    text="✅ Да, удалить",
-                    callback_data=_DEL_OLD_YES_CB,
-                    style=STYLE_DANGER,
+                    text="Да",
+                    callback_data=yes_cb,
+                    style=STYLE_SUCCESS,
                 ),
                 InlineKeyboardButton(
-                    text="❌ Отмена",
-                    callback_data=_DEL_OLD_NO_CB,
-                    style=STYLE_PRIMARY,
+                    text="Нет",
+                    callback_data=no_cb,
+                    style=STYLE_DANGER,
                 ),
             ]
         ]
     )
+
+
+async def _bulk_delete_from_bot_db(
+    admin_chat_id: int,
+    user_ids: list[int],
+    operation_label: str,
+) -> tuple[int, int, int]:
+    """Удаляет пользователей из БД бота; возвращает (в выборке, удалено, ошибок)."""
+    total = len(user_ids)
+    deleted = 0
+    failed = 0
+    for processed, user_id in enumerate(user_ids, start=1):
+        if await sql.delete_from_db(user_id):
+            deleted += 1
+        else:
+            failed += 1
+        if processed % _BULK_DELETE_PROGRESS_EVERY == 0:
+            try:
+                await bot.send_message(
+                    admin_chat_id,
+                    f"{operation_label}: удалено {deleted} / {total} "
+                    f"(обработано {processed})",
+                )
+            except Exception as notify_err:
+                logger.warning(
+                    "%s: не удалось отправить прогресс админу: %s",
+                    operation_label,
+                    notify_err,
+                )
+        await asyncio.sleep(0.01)
+    return total, deleted, failed
+
+
+@router.message(Command(commands=["delete_stamp"]))
+async def delete_stamp_command(message: Message):
+    """Удаление из БД бота всех пользователей с указанной меткой (stamp)."""
+    if message.from_user.id not in ADMIN_IDS:
+        return
+
+    parts = message.text.split(maxsplit=1) if message.text else []
+    if len(parts) < 2 or not parts[1].strip():
+        await message.answer(
+            "❌ Использование: /delete_stamp <метка>\n"
+            "Например: /delete_stamp promo_march"
+        )
+        return
+
+    stamp = parts[1].strip()
+    user_ids = await sql.select_user_by_parameter("stamp", stamp)
+    n = len(user_ids)
+    if not user_ids:
+        await message.answer(f"Пользователей с меткой «{stamp}» не найдено.")
+        return
+
+    _pending_delete_stamp[message.from_user.id] = stamp
     await message.answer(
-        f"📋 <b>/del_old</b>\n\n"
-        f"Будет удалено из таблицы <b>users</b>: <b>{n}</b> чел.\n\n"
-        f"Условия:\n"
-        f"• in_panel = False\n"
-        f"• is_connect = False\n"
-        f"• subscription_end_date = NULL\n"
-        f"• дата регистрации не позже {_DEL_OLD_CREATED_CUTOFF:%d.%m.%Y}\n"
-        f"• нет успешных платежей (confirmed / paid)\n\n"
-        f"⚠️ Удаление только из БД бота (как /delete).\n"
-        f"Подтвердите действие.",
-        reply_markup=confirm_kb,
+        f"📋 <b>/delete_stamp</b>\n\n"
+        f"Метка: <code>{html.escape(stamp)}</code>\n"
+        f"Найдено пользователей: <b>{n}</b>\n\n"
+        f"Удалить их из БД бота?\n"
+        f"⚠️ Подписки в панели X3 не затрагиваются.",
+        reply_markup=_delete_confirm_keyboard(_DELETE_STAMP_YES_CB, _DELETE_STAMP_NO_CB),
         parse_mode="HTML",
     )
 
 
-@router.callback_query(F.data == _DEL_OLD_NO_CB)
-async def del_old_cancel(callback: CallbackQuery):
+@router.callback_query(F.data == _DELETE_STAMP_NO_CB)
+async def delete_stamp_cancel(callback: CallbackQuery):
+    if callback.from_user.id not in ADMIN_IDS:
+        await callback.answer("Нет доступа.", show_alert=True)
+        return
+    await callback.answer()
+    _pending_delete_stamp.pop(callback.from_user.id, None)
+    await callback.message.edit_text(
+        "Удаление по метке отменено.",
+        reply_markup=None,
+    )
+
+
+@router.callback_query(F.data == _DELETE_STAMP_YES_CB)
+async def delete_stamp_confirm(callback: CallbackQuery):
+    if callback.from_user.id not in ADMIN_IDS:
+        await callback.answer("Нет доступа.", show_alert=True)
+        return
+
+    stamp = _pending_delete_stamp.pop(callback.from_user.id, None)
+    if not stamp:
+        await callback.answer("Сессия истекла. Повторите /delete_stamp.", show_alert=True)
+        return
+
+    await callback.answer()
+    user_ids = await sql.select_user_by_parameter("stamp", stamp)
+    if not user_ids:
+        await callback.message.edit_text(
+            f"Список пуст (метка «{html.escape(stamp)}»). Повторите /delete_stamp.",
+            parse_mode="HTML",
+        )
+        return
+
+    total = len(user_ids)
+    await callback.message.edit_text(
+        f"⏳ /delete_stamp: удаление {total} пользователей (метка "
+        f"«{html.escape(stamp)}»)…",
+        parse_mode="HTML",
+    )
+
+    admin_chat_id = callback.message.chat.id
+    total, deleted, failed = await _bulk_delete_from_bot_db(
+        admin_chat_id,
+        user_ids,
+        "delete_stamp",
+    )
+
+    await callback.message.answer(
+        "✅ <b>/delete_stamp — отчёт</b>\n"
+        f"• Метка: <code>{html.escape(stamp)}</code>\n"
+        f"• В выборке: {total}\n"
+        f"• Удалено из БД бота: {deleted}\n"
+        f"• Ошибок: {failed}\n"
+        f"⚠️ Записи в панели X3 не удалялись.",
+        parse_mode="HTML",
+    )
+    logger.info(
+        "Админ %s delete_stamp stamp=%r total=%s deleted=%s failed=%s",
+        callback.from_user.id,
+        stamp,
+        total,
+        deleted,
+        failed,
+    )
+
+
+@router.message(Command(commands=["delete_old"]))
+async def delete_old_command(message: Message):
+    """Удаление из БД бота неактивных пользователей старше месяца."""
+    if message.from_user.id not in ADMIN_IDS:
+        return
+
+    cutoff = datetime.now() - timedelta(days=_DELETE_OLD_MONTHS_DAYS)
+    user_ids = await sql.select_user_ids_inactive_old(cutoff)
+    n = len(user_ids)
+    if not user_ids:
+        await message.answer(
+            "Нет пользователей по условиям /delete_old:\n"
+            "in_panel=False, is_connect=False, reserve_field=False, "
+            "subscription_end_date пусто, "
+            f"create_user раньше {cutoff:%d.%m.%Y %H:%M}."
+        )
+        return
+
+    await message.answer(
+        f"📋 <b>/delete_old</b>\n\n"
+        f"Условия:\n"
+        f"• не брал ключ (in_panel=False)\n"
+        f"• не подключался (is_connect=False)\n"
+        f"• не платил (reserve_field=False)\n"
+        f"• subscription_end_date пусто\n"
+        f"• регистрация до <b>{cutoff:%d.%m.%Y %H:%M}</b>\n\n"
+        f"Найдено пользователей: <b>{n}</b>\n\n"
+        f"Удалить их из БД бота?\n"
+        f"⚠️ Подписки в панели X3 не затрагиваются.",
+        reply_markup=_delete_confirm_keyboard(_DELETE_OLD_YES_CB, _DELETE_OLD_NO_CB),
+        parse_mode="HTML",
+    )
+
+
+@router.callback_query(F.data == _DELETE_OLD_NO_CB)
+async def delete_old_cancel(callback: CallbackQuery):
     if callback.from_user.id not in ADMIN_IDS:
         await callback.answer("Нет доступа.", show_alert=True)
         return
     await callback.answer()
     await callback.message.edit_text(
-        "Удаление /del_old отменено.",
+        "Удаление /delete_old отменено.",
         reply_markup=None,
     )
 
 
-@router.callback_query(F.data == _DEL_OLD_YES_CB)
-async def del_old_confirm(callback: CallbackQuery):
+@router.callback_query(F.data == _DELETE_OLD_YES_CB)
+async def delete_old_confirm(callback: CallbackQuery):
     if callback.from_user.id not in ADMIN_IDS:
         await callback.answer("Нет доступа.", show_alert=True)
         return
 
     await callback.answer()
-    n_before = await sql.count_del_old_users(_DEL_OLD_CREATED_CUTOFF)
-    if n_before == 0:
+    cutoff = datetime.now() - timedelta(days=_DELETE_OLD_MONTHS_DAYS)
+    user_ids = await sql.select_user_ids_inactive_old(cutoff)
+    if not user_ids:
         await callback.message.edit_text(
-            "Список пуст. Повторите /del_old.",
+            "Список пуст. Повторите /delete_old.",
             reply_markup=None,
         )
         return
 
+    total = len(user_ids)
     await callback.message.edit_text(
-        f"⏳ /del_old: удаление {n_before} пользователей…",
+        f"⏳ /delete_old: удаление {total} пользователей…",
         reply_markup=None,
     )
 
-    try:
-        deleted = await sql.delete_del_old_users(_DEL_OLD_CREATED_CUTOFF)
-    except Exception as e:
-        logger.error(f"Ошибка в /del_old: {e}")
-        await callback.message.answer(f"❌ Ошибка при удалении: {e}")
-        return
+    admin_chat_id = callback.message.chat.id
+    total, deleted, failed = await _bulk_delete_from_bot_db(
+        admin_chat_id,
+        user_ids,
+        "delete_old",
+    )
 
-    n_after = await sql.count_del_old_users(_DEL_OLD_CREATED_CUTOFF)
     await callback.message.answer(
-        f"Готово (/del_old).\n"
-        f"• К удалению было: {n_before}\n"
-        f"• Удалено строк: {deleted}\n"
-        f"• Осталось по тем же критериям: {n_after}"
+        "✅ <b>/delete_old — отчёт</b>\n"
+        f"• Граница create_user: {cutoff:%d.%m.%Y %H:%M}\n"
+        f"• В выборке: {total}\n"
+        f"• Удалено из БД бота: {deleted}\n"
+        f"• Ошибок: {failed}\n"
+        f"⚠️ Записи в панели X3 не удалялись.",
+        parse_mode="HTML",
     )
     logger.info(
-        "Админ %s: del_old before=%s deleted=%s after=%s",
+        "Админ %s delete_old total=%s deleted=%s failed=%s cutoff=%s",
         callback.from_user.id,
-        n_before,
+        total,
         deleted,
-        n_after,
+        failed,
+        cutoff.isoformat(),
     )
 
 
