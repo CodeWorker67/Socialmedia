@@ -57,6 +57,7 @@ from config import (
 )
 from keyboard import keyboard_payment_stars
 from lexicon import dct_desc, dct_price, lexicon
+from wl_traffic.constants import WL_TRAFFIC_TARIFFS
 from wl_traffic.texts import format_pro_payment_link
 from wl_traffic.service import credit_wl_subscription_bonus, get_wl_used_gb_for_user
 from logging_config import logger
@@ -434,6 +435,13 @@ def _site_test_price_rub(row: tuple, ctx: dict[str, Any]) -> Optional[int]:
     return SITE_TEST_PRICE_RUB
 
 
+async def _billing_user_id_from_ctx(ctx: dict[str, Any]) -> int:
+    row = await _user_row_from_jwt(ctx)
+    if row is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "User not found")
+    return int(row[1])
+
+
 async def resolve_telegram_user_id(ctx: dict[str, Any]) -> int:
     row = await _user_row_from_jwt(ctx)
     if row is None:
@@ -561,6 +569,11 @@ class CreatePaymentIn(BaseModel):
     tariff_id: str
     method: Literal["sbp", "card"]
     is_gift: bool = False
+
+
+class CreateTrafficPaymentIn(BaseModel):
+    gb: str = Field(..., description="Размер пакета в GB (ключ из WL_TRAFFIC_TARIFFS)")
+    method: Literal["sbp", "card"]
 
 
 SubPageDuration = Literal["7", "30", "90", "180", "365"]  # white_30 отключён
@@ -978,6 +991,31 @@ async def config_tariffs():
     return out
 
 
+@app.get("/api/config/traffic-packages")
+async def config_traffic_packages():
+    """Пакеты доп. трафика (от большего GB к меньшему)."""
+    out: list[dict[str, Any]] = []
+    for gb, price in reversed(list(WL_TRAFFIC_TARIFFS.items())):
+        out.append({"gb": gb, "price": price})
+    return out
+
+
+@app.get("/api/user/wl-traffic")
+async def user_wl_traffic(ctx: JwtCtx):
+    billing_uid = await _billing_user_id_from_ctx(ctx)
+    trafic_wl, limit_wl = await sql.get_wl_limits(billing_uid)
+    used_gb = await get_wl_used_gb_for_user(x3, billing_uid, trafic_wl)
+    limit_gb = round(float(limit_wl or 0.0), 2)
+    used_gb = round(float(used_gb or 0.0), 2)
+    remaining_gb = max(0.0, round(limit_gb - used_gb, 2))
+    return {
+        "limit_gb": limit_gb,
+        "used_gb": used_gb,
+        "remaining_gb": remaining_gb,
+        "limit_exhausted": limit_gb > 0 and used_gb >= limit_gb,
+    }
+
+
 @app.post("/api/trial/activate")
 async def trial_activate(ctx: JwtCtx):
     if ctx.get("auth") == "email":
@@ -1117,6 +1155,85 @@ async def payments_create(ctx: JwtCtx, body: CreatePaymentIn):
         duration=duration_str,
         white=white,
         is_gift=body.is_gift,
+        kind=body.method,
+        telegram_username=site_uname,
+        payload_source=SITE,
+    )
+
+    if result["status"] == "rate_limited":
+        raise HTTPException(
+            status.HTTP_429_TOO_MANY_REQUESTS,
+            lexicon["payment_too_many_pending"].format(PAYMENT_MAX_PENDING_PER_USER),
+        )
+    if result["status"] != "pending":
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, "Не удалось создать платёж")
+
+    return {
+        "payment_url": result.get("url") or "",
+        "payment_id": result.get("id") or "",
+    }
+
+
+def _wl_traffic_site_price(gb: str, billing_user_id: int) -> int:
+    price = WL_TRAFFIC_TARIFFS.get(gb, 0)
+    if billing_user_id in ADMIN_IDS:
+        return 10
+    return price
+
+
+@app.post("/api/payments/create-traffic")
+async def payments_create_traffic(ctx: JwtCtx, body: CreateTrafficPaymentIn):
+    row = await _user_row_from_jwt(ctx)
+    if row is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "User not found")
+    if ctx.get("auth") == "email":
+        billing_user_id = int(row[1])
+    else:
+        billing_user_id = await resolve_telegram_user_id(ctx)
+
+    gb = body.gb.strip()
+    if gb not in WL_TRAFFIC_TARIFFS:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Unknown traffic package")
+
+    price = _wl_traffic_site_price(gb, billing_user_id)
+    site_test_price = _site_test_price_rub(row, ctx)
+    if site_test_price is not None:
+        price = site_test_price
+
+    duration_str = f"traffic{gb}"
+    description = f"Пакет трафика {gb} GB"
+
+    site_uname = ctx.get("username")
+    if not isinstance(site_uname, str):
+        site_uname = None
+
+    if body.method == "sbp":
+        result = await _create_sbp_checkout(
+            billing_user_id=billing_user_id,
+            duration_str=duration_str,
+            price=int(price),
+            description=description,
+            white=False,
+            is_gift=False,
+            source=SITE,
+            telegram_username=site_uname,
+        )
+        _raise_payment_result_errors(result)
+        return {
+            "payment_url": result.get("url") or "",
+            "payment_id": result.get("id") or "",
+        }
+
+    if not API_FREEKASSA or SHOP_ID_FREEKASSA is None:
+        raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, "FreeKassa is not configured")
+
+    result = await pay_site(
+        val=str(price),
+        des=description,
+        billing_user_id=billing_user_id,
+        duration=duration_str,
+        white=False,
+        is_gift=False,
         kind=body.method,
         telegram_username=site_uname,
         payload_source=SITE,
