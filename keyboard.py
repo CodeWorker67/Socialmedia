@@ -632,19 +632,21 @@ def partner_invite_share_url(user_id: int) -> str:
     return f"https://t.me/share/url?url={inner}&text={text}"
 
 
-def ref_keyboard(user_id):
-    keyboard = InlineKeyboardMarkup(
-        inline_keyboard=[
-            [
-                InlineKeyboardButton(
-                    text="Пригласить друзей🫶",
-                    url=f"https://t.me/share/url?url={BOT_URL}?start=ref{user_id}&text={urllib.parse.quote('Вот ссылка для тебя на надежный VPN!')}",
-                )
-            ],
-            [InlineKeyboardButton(text=BTN_BACK, callback_data="back_to_earn")],
-        ]
-    )
-    return keyboard
+def ref_keyboard(user_id, *, show_qr: bool = True):
+    rows = [
+        [
+            InlineKeyboardButton(
+                text="Пригласить друзей🫶",
+                url=f"https://t.me/share/url?url={BOT_URL}?start=ref{user_id}&text={urllib.parse.quote('Вот ссылка для тебя на надежный VPN!')}",
+            )
+        ],
+    ]
+    if show_qr:
+        rows.append(
+            [InlineKeyboardButton(text="Показать QR-код", callback_data="ref_show_qr")]
+        )
+    rows.append([InlineKeyboardButton(text=BTN_BACK, callback_data="back_to_earn")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
 def keyboard_inline_ref(user_id):
@@ -696,24 +698,48 @@ def keyboard_import_end(url_app: str) -> InlineKeyboardMarkup:
     )
 
 
-def keyboard_partner_dashboard(user_id: int):
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
+def keyboard_partner_dashboard(
+    user_id: int,
+    *,
+    show_bot_qr: bool = True,
+    show_site_qr: bool = True,
+):
+    rows = [
+        [
+            InlineKeyboardButton(
+                text="Пригласить друзей🫶",
+                url=partner_invite_share_url(user_id),
+            )
+        ],
+    ]
+    if show_bot_qr:
+        rows.append(
             [
                 InlineKeyboardButton(
-                    text="Пригласить друзей🫶",
-                    url=partner_invite_share_url(user_id),
+                    text="Показать QR-код на тг-бота",
+                    callback_data="partner_qr_bot",
                 )
-            ],
+            ]
+        )
+    if show_site_qr and partner_site_link(user_id):
+        rows.append(
             [
                 InlineKeyboardButton(
-                    text="💰 Создать заявку на вывод",
-                    callback_data="partner_withdraw",
+                    text="Показать QR-код на сайт",
+                    callback_data="partner_qr_site",
                 )
-            ],
-            [InlineKeyboardButton(text=BTN_BACK, callback_data="back_to_earn")],
+            ]
+        )
+    rows.append(
+        [
+            InlineKeyboardButton(
+                text="💰 Создать заявку на вывод",
+                callback_data="partner_withdraw",
+            )
         ]
     )
+    rows.append([InlineKeyboardButton(text=BTN_BACK, callback_data="back_to_earn")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
 def keyboard_partner_withdraw(support_url: str):
