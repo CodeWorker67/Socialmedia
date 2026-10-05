@@ -12,7 +12,7 @@ from keyboard import (
 )
 from lexicon import lexicon
 from payments.platega_recurrent import cancel_user_autopay
-from utils.menu_ui import edit_or_send_photo, show_connect_screen
+from utils.menu_ui import edit_or_send_photo, has_active_subscription, show_connect_screen
 from wl_traffic.constants import (
     PROFILE_CB,
     WL_TRAFFIC_BUY_CB,
@@ -59,6 +59,11 @@ async def cancel_autopay_cb(callback: CallbackQuery):
 
 @router.callback_query(F.data.in_({WL_TRAFFIC_BUY_CB, WL_TRAFFIC_BUY_SUB_CB}))
 async def wl_traffic_buy_cb(callback: CallbackQuery):
+    user_data = await sql.get_user(callback.from_user.id)
+    if not has_active_subscription(user_data):
+        await callback.answer(lexicon["wl_traffic_need_sub"], show_alert=True)
+        return
+
     back_callback = "connect_vpn" if callback.data == WL_TRAFFIC_BUY_CB else "buy_vpn_self"
     await callback.answer()
     await edit_or_send_photo(
