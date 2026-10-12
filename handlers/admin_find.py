@@ -212,6 +212,8 @@ async def _refresh_find_message(
 async def _format_find_body(user: Users) -> str:
     tg_id = int(user.user_id)
     sub_status = _subscription_active_until(user.subscription_end_date)
+    autopay = await sql.get_status_active_platega_autopay(tg_id)
+    autopay_status = "включена" if autopay is not None else "выключена"
 
     sub_link = await x3.sublink(str(tg_id)) or "—"
     devices_block = await _format_devices_for_admin(tg_id)
@@ -249,6 +251,7 @@ async def _format_find_body(user: Users) -> str:
     lines.extend([
         "",
         f"Подписка:   {sub_status}",
+        f"Автооплата: {autopay_status}",
         f"Ссылка: {sub_link}",
         "Устройства:",
         devices_block,
