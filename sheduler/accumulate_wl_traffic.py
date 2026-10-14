@@ -12,7 +12,7 @@ from wl_traffic.service import (
 
 async def accumulate_wl_traffic_cron() -> None:
     """
-    Закрывающий WL-день (до 03:00 — вчера по календарю): legacy bulk по белой ноде,
+    Закрывающий WL-день (до 03:00 — вчера по календарю): legacy bulk по белым нодам,
     перевод в GB и прибавление к trafic_wl. Три retry при пустом ответе.
     Повтор за уже закрытый день пропускается (wl_traffic_meta.last_closed_date).
     """
