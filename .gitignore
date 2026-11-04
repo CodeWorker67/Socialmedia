@@ -4,6 +4,12 @@ __pycache__/
 *$py.class
 sqlite3.db
 export.xlsx
+
+.env*
+!.env.example
+*.bak*
+*.before.json
+
 # C extensions
 config.py/speedgamer.db-shm
 config.py/speedgamer.db-wal
