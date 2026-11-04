@@ -840,7 +840,7 @@ class AsyncSQL:
                 Users.limit_wl,
                 Users.field_bool_2,
             ).where(
-                Users.is_delete == False,
+                # is_delete не учитываем: пользователь, заблокировавший бота, сохраняет платную подписку и квоту белых списков (2026-11-04)
                 Users.in_panel == True,
                 Users.subscription_end_date.isnot(None),
                 Users.subscription_end_date > now,
