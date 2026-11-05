@@ -98,6 +98,7 @@ async def _export_database_to_excel_impl(message: Message, *, users_full_columns
             white_counter_list = snapshot["white_counter"]
             platega_autopay_list = snapshot["platega_autopay_subscriptions"]
             platega_recurent_list = snapshot["platega_recurent"]
+            app_referrals_list = snapshot["app_refferals"]
 
             wb = openpyxl.Workbook()
             if 'Sheet' in wb.sheetnames:
@@ -431,6 +432,31 @@ async def _export_database_to_excel_impl(message: Message, *, users_full_columns
                         max_len = max(max_len, len(str(cell.value)))
                 ws_white_counter.column_dimensions[col_letter].width = min(max_len + 2, 50)
 
+            # --- Лист APP_REFFERALS ---
+            ws_app_refferals = wb.create_sheet(title="app_refferals")
+            ar_columns = ['tg_id', 'created_at', 'app']
+            for col_num, title in enumerate(ar_columns, 1):
+                cell = ws_app_refferals.cell(row=1, column=col_num, value=title)
+                cell.alignment = header_alignment
+                cell.border = thin_border
+
+            for row_num, row in enumerate(app_referrals_list, 2):
+                created = row.created_at
+                if created and isinstance(created, datetime):
+                    created = created.strftime('%Y-%m-%d %H:%M:%S')
+                row_data = [row.tg_id, created, row.app]
+                for col_num, value in enumerate(row_data, 1):
+                    cell = ws_app_refferals.cell(row=row_num, column=col_num, value=value)
+                    cell.border = thin_border
+
+            for col in ws_app_refferals.columns:
+                max_len = 0
+                col_letter = col[0].column_letter
+                for cell in col:
+                    if cell.value:
+                        max_len = max(max_len, len(str(cell.value)))
+                ws_app_refferals.column_dimensions[col_letter].width = min(max_len + 2, 50)
+
             # --- Лист PLATEGA_AUTOPAY (рекуррентные подписки) ---
             ws_platega_autopay = wb.create_sheet(title="platega_autopay")
             autopay_columns = [
@@ -497,7 +523,7 @@ async def _export_database_to_excel_impl(message: Message, *, users_full_columns
             # Заморозка заголовков
             for ws in [ws_users, ws_payments, ws_payments_cards, ws_payments_stars, ws_platega_crypto,
                        ws_fk_sbp, ws_wata_sbp, ws_wata_card, ws_payments_cryptobot, ws_gifts, ws_online,
-                       ws_white_counter, ws_platega_autopay, ws_platega_recurent]:
+                       ws_white_counter, ws_app_refferals, ws_platega_autopay, ws_platega_recurent]:
                 ws.freeze_panes = ws['A2']
 
             fd, path = tempfile.mkstemp(suffix=".xlsx")
@@ -526,6 +552,7 @@ async def _export_database_to_excel_impl(message: Message, *, users_full_columns
         payments_stars_count = len(payments_stars_list)
         payments_cryptobot_count = len(payments_cryptobot_list)
         white_counter_count = len(snapshot["white_counter"])
+        app_refferals_count = len(snapshot["app_refferals"])
         payments_platega_crypto_count = len(payments_platega_crypto_list)
         payments_fk_sbp_count = len(payments_fk_sbp_list)
         payments_wata_sbp_count = len(payments_wata_sbp_list)
@@ -573,7 +600,8 @@ async def _export_database_to_excel_impl(message: Message, *, users_full_columns
                 f"├ 💎 Платежей Криптоботом: {successful_cryptobot_count}/{payments_cryptobot_count}\n"
                 f"├ 🔄 Автоподписок Platega (активных): {platega_autopay_active_count}/{platega_autopay_count}\n"
                 f"├ 🔄 Списаний Platega рекуррент: {platega_recurent_confirmed_count}/{platega_recurent_count}\n"
-                f"└ 👁 White-кликов: {white_counter_count}"
+                f"├ 👁 White-кликов: {white_counter_count}\n"
+                f"└ 📱 app_refferals: {app_refferals_count}"
             )
             await message.answer_document(
                 document=FSInputFile(export_path),

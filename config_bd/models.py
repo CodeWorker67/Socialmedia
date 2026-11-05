@@ -185,6 +185,15 @@ class WhiteCounter(Base):
     time_created = Column(DateTime, default=datetime.now)
 
 
+class AppReferrals(Base):
+    """Первый заход по ref-ссылке с меткой приложения (happ / incy)."""
+    __tablename__ = 'app_refferals'
+
+    tg_id = Column(BigInteger, primary_key=True)
+    created_at = Column(DateTime, default=datetime.now, nullable=False)
+    app = Column(String(16), nullable=False)
+
+
 class LinkingCodes(Base):
     __tablename__ = 'linking_codes'
 

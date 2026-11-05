@@ -4,7 +4,7 @@ import requests
 from datetime import datetime, timezone
 
 from bot import sql, x3, bot
-from config_bd.utils import USER_IX_SUBSCRIPTION_END
+from config_bd.utils import USER_IX_SUBSCRIPTION_END, parse_ref_start_payload
 from lead_tracker import post_user_registered, post_user_trial, tracker_source_from_ref_and_stamp
 from config import CHANEL_ID, ADMIN_IDS, BOT_URL, PARTNER_PROCENT, PARTNER_MIN, PARTNER_SUPPORT_URL, PUBLIC_SITE_URL, CHECKER_ID
 from keyboard import (keyboard_tariff_bonus, keyboard_tariff,
@@ -110,6 +110,7 @@ async def process_start_command(message: Message, command: Command):
     had_row_before = user_data is not None
     in_panel = False
     ref_login = ''
+    ref_app = None
     partner_login = ''
     existing = False
     stamp = ''
@@ -149,7 +150,7 @@ async def process_start_command(message: Message, command: Command):
             else:
                 logger.success(
                     f'Юзер {message.from_user.id} - {message.from_user.username} зашел в бота в первый раз по реферальной ссылкой')
-                ref_login = start_arg.replace('ref', '', 1)
+                ref_login, ref_app = parse_ref_start_payload(start_arg)
 
         elif start_arg.startswith('gift_') or 'gift_' in start_arg:
             logger.info(
@@ -245,6 +246,8 @@ async def process_start_command(message: Message, command: Command):
         )
         if inserted:
             logger.info(f'Юзер {message.from_user.id} - {message.from_user.username} добавлен в БД')
+            if ref_app:
+                await sql.add_app_referral(message.from_user.id, ref_app)
             src = tracker_source_from_ref_and_stamp(ref_login, stamp, partner_login)
             await post_user_registered(
                 message.from_user.id,

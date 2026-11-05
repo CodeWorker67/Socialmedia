@@ -696,9 +696,24 @@ async def delete_user_command(message: Message):
 
         # Проверяем, существует ли пользователь в БД
         user_data = await sql.get_user(user_id_to_delete)
+        app_ref = await sql.get_app_referral(user_id_to_delete)
 
-        if not user_data:
+        if not user_data and not app_ref:
             await message.answer(f"❌ Пользователь с ID {user_id_to_delete} не найден в базе данных.")
+            return
+
+        if not user_data and app_ref:
+            removed = await sql.delete_app_referral_by_tg_id(user_id_to_delete)
+            if removed:
+                logger.info(
+                    f"Администратор {message.from_user.id} удалил запись app_refferals для {user_id_to_delete}"
+                )
+                await message.answer(
+                    f"✅ Запись удалена из app_refferals (tg_id={user_id_to_delete}, app={app_ref.app}).\n"
+                    f"В таблице users пользователя не было."
+                )
+            else:
+                await message.answer(f"❌ Не удалось удалить запись app_refferals для {user_id_to_delete}.")
             return
 
         # Получаем информацию о пользователе для уведомления

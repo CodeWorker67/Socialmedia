@@ -7,13 +7,28 @@ from datetime import datetime, date, timedelta, timezone
 from typing import Optional, List, Tuple, Dict, Any, NamedTuple
 
 from config_bd.models import AsyncSessionLocal, Users, Payments, Gifts, PaymentsCryptobot, PaymentsStars, Online, \
-    WhiteCounter, PaymentsCards, PaymentsPlategaCrypto, PaymentsWataSBP, PaymentsWataCard, PaymentsFkSBP, \
+    WhiteCounter, AppReferrals, PaymentsCards, PaymentsPlategaCrypto, PaymentsWataSBP, PaymentsWataCard, PaymentsFkSBP, \
     LinkingCodes, PasswordResetCodes, WlTrafficMeta, PlategaAutopaySubscription, PlategaRecurent
 from lexicon import dct_price
 from logging_config import logger
 
 # Пакетная обработка для /stat: меньше 999 — лимит переменных SQLite в одном запросе.
 _STAT_IN_CHUNK = 900
+
+_REF_APP_SUFFIXES = frozenset({"happ", "incy"})
+
+
+def parse_ref_start_payload(start_arg: str) -> Tuple[str, Optional[str]]:
+    """
+    Разбор /start ref…: ref_login — часть после ref до первого «_»;
+    app — happ или incy, если суффикс после «_» совпадает.
+    """
+    body = start_arg.replace("ref", "", 1)
+    if "_" not in body:
+        return body, None
+    ref_part, suffix = body.split("_", 1)
+    app = suffix if suffix in _REF_APP_SUFFIXES else None
+    return ref_part, app
 
 _BILLING_OK_STATUSES = ("confirmed", "paid")
 
@@ -1730,6 +1745,35 @@ class AsyncSQL:
             'all_users'
         ]
 
+    async def add_app_referral(self, tg_id: int, app: str) -> bool:
+        """Запись первого захода по ref с меткой happ/incy. False, если tg_id уже есть."""
+        app_norm = (app or "").strip().lower()
+        if app_norm not in _REF_APP_SUFFIXES:
+            return False
+        async with self.session_factory() as session:
+            stmt = sqlite_insert(AppReferrals).values(
+                tg_id=tg_id,
+                app=app_norm,
+            ).on_conflict_do_nothing(index_elements=[AppReferrals.tg_id])
+            result = await session.execute(stmt)
+            await session.commit()
+            return (result.rowcount or 0) > 0
+
+    async def get_app_referral(self, tg_id: int) -> Optional[AppReferrals]:
+        async with self.session_factory() as session:
+            result = await session.execute(
+                select(AppReferrals).where(AppReferrals.tg_id == tg_id)
+            )
+            return result.scalar_one_or_none()
+
+    async def delete_app_referral_by_tg_id(self, tg_id: int) -> bool:
+        async with self.session_factory() as session:
+            result = await session.execute(
+                delete(AppReferrals).where(AppReferrals.tg_id == tg_id)
+            )
+            await session.commit()
+            return (result.rowcount or 0) > 0
+
     async def delete_from_db(self, user_id: int) -> bool:
         """Полностью удаляет пользователя из БД по User_id."""
         async with self.session_factory() as session:
@@ -1740,6 +1784,7 @@ class AsyncSQL:
                 logger.warning(f"User {user_id} not found for deletion")
                 return False
             await session.delete(user)
+            await session.execute(delete(AppReferrals).where(AppReferrals.tg_id == user_id))
             await session.commit()
             logger.info(f"✅ Удалено пользователей: 1 (User_id: {user_id})")
             return True
@@ -1756,6 +1801,7 @@ class AsyncSQL:
                 stmt = delete(Users).where(Users.user_id.in_(chunk))
                 result = await session.execute(stmt)
                 deleted += int(result.rowcount or 0)
+                await session.execute(delete(AppReferrals).where(AppReferrals.tg_id.in_(chunk)))
             await session.commit()
         logger.info("bulk delete users: requested=%s deleted=%s", len(uniq), deleted)
         return deleted
@@ -2521,6 +2567,7 @@ class AsyncSQL:
             white_counter_list = (await session.execute(select(WhiteCounter))).scalars().all()
             platega_autopay_list = (await session.execute(select(PlategaAutopaySubscription))).scalars().all()
             platega_recurent_list = (await session.execute(select(PlategaRecurent))).scalars().all()
+            app_referrals_list = (await session.execute(select(AppReferrals))).scalars().all()
         return {
             "users": users_list,
             "payments": payments_list,
@@ -2536,6 +2583,7 @@ class AsyncSQL:
             "white_counter": white_counter_list,
             "platega_autopay_subscriptions": platega_autopay_list,
             "platega_recurent": platega_recurent_list,
+            "app_refferals": app_referrals_list,
         }
 
     async def get_trafic_stat_source(

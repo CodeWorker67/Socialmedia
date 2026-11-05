@@ -126,6 +126,7 @@ def _clear_tables(conn: sqlite3.Connection) -> None:
         "password_reset_codes",
         "linking_codes",
         "white_counter",
+        "app_refferals",
         "online",
         "gifts",
         "payments_cryptobot",
@@ -426,6 +427,20 @@ def _import_white_counter(conn: sqlite3.Connection, df: pd.DataFrame) -> int:
     return _bulk_insert(conn, "white_counter", cols, rows)
 
 
+def _import_app_refferals(conn: sqlite3.Connection, df: pd.DataFrame) -> int:
+    rows = []
+    for rec in df.to_dict("records"):
+        rows.append(
+            (
+                _to_bigint(rec["tg_id"]),
+                _dt_sql(rec["created_at"]) or datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                str(rec.get("app") or "").strip().lower(),
+            )
+        )
+    cols = ["tg_id", "created_at", "app"]
+    return _bulk_insert(conn, "app_refferals", cols, rows, pk_col="tg_id")
+
+
 SHEET_IMPORTERS: Dict[str, Callable[[sqlite3.Connection, pd.DataFrame], int]] = {
     "users": _import_users,
     "payments_sbp": lambda c, d: _import_payments_sbp(c, d),
@@ -441,6 +456,7 @@ SHEET_IMPORTERS: Dict[str, Callable[[sqlite3.Connection, pd.DataFrame], int]] = 
     "gifts": _import_gifts,
     "online": _import_online,
     "white_counter": _import_white_counter,
+    "app_refferals": _import_app_refferals,
 }
 
 
