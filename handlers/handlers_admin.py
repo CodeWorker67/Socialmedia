@@ -777,7 +777,7 @@ def _delete_confirm_keyboard(yes_cb: str, no_cb: str) -> InlineKeyboardMarkup:
 
 
 async def _bulk_delete_from_bot_db(user_ids: list[int]) -> tuple[int, int, int]:
-    """Пакетное удаление users из БД бота; возвращает (в выборке, удалено, не удалено)."""
+    """Пакетное удаление users и app_refferals из БД бота; возвращает (в выборке, удалено, не удалено)."""
     total = len(user_ids)
     if not total:
         return 0, 0, 0
@@ -812,7 +812,7 @@ async def delete_stamp_command(message: Message):
         f"📋 <b>/delete_stamp</b>\n\n"
         f"Метка: <code>{html.escape(stamp)}</code>\n"
         f"Найдено пользователей: <b>{n}</b>\n\n"
-        f"Удалить их из БД бота?\n"
+        f"Удалить их из БД бота (users и app_refferals)?\n"
         f"⚠️ Подписки в панели X3 не затрагиваются.",
         reply_markup=_delete_confirm_keyboard(_DELETE_STAMP_YES_CB, _DELETE_STAMP_NO_CB),
         parse_mode="HTML",
@@ -865,8 +865,9 @@ async def delete_stamp_confirm(callback: CallbackQuery):
         "✅ <b>/delete_stamp — отчёт</b>\n"
         f"• Метка: <code>{html.escape(stamp)}</code>\n"
         f"• В выборке: {total}\n"
-        f"• Удалено из БД бота: {deleted}\n"
+        f"• Удалено из БД бота (users): {deleted}\n"
         f"• Ошибок: {failed}\n"
+        f"• app_refferals по этим tg_id тоже удалены\n"
         f"⚠️ Записи в панели X3 не удалялись.",
         parse_mode="HTML",
     )
@@ -908,7 +909,7 @@ async def delete_old_command(message: Message):
         f"• нет успешных оплат (confirmed / paid во всех таблицах платежей)\n"
         f"• регистрация до <b>{cutoff:%d.%m.%Y %H:%M}</b>\n\n"
         f"Найдено пользователей: <b>{n}</b>\n\n"
-        f"Удалить их из БД бота?\n"
+        f"Удалить их из БД бота (users и app_refferals)?\n"
         f"⚠️ Подписки в панели X3 не затрагиваются.",
         reply_markup=_delete_confirm_keyboard(_DELETE_OLD_YES_CB, _DELETE_OLD_NO_CB),
         parse_mode="HTML",
@@ -955,8 +956,9 @@ async def delete_old_confirm(callback: CallbackQuery):
         "✅ <b>/delete_old — отчёт</b>\n"
         f"• Граница create_user: {cutoff:%d.%m.%Y %H:%M}\n"
         f"• В выборке: {total}\n"
-        f"• Удалено из БД бота: {deleted}\n"
+        f"• Удалено из БД бота (users): {deleted}\n"
         f"• Ошибок: {failed}\n"
+        f"• app_refferals по этим tg_id тоже удалены\n"
         f"⚠️ Записи в панели X3 не удалялись.",
         parse_mode="HTML",
     )

@@ -1790,7 +1790,7 @@ class AsyncSQL:
             return True
 
     async def delete_users_from_db_by_ids(self, user_ids: List[int]) -> int:
-        """Удаляет записи users пакетами; возвращает число удалённых строк."""
+        """Удаляет записи users пакетами и связанные строки app_refferals; возвращает число удалённых users."""
         if not user_ids:
             return 0
         uniq = list({int(u) for u in user_ids})
