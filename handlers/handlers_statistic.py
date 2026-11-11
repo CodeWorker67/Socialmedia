@@ -298,7 +298,7 @@ def _sync_build_anal_payment_excel(
         + [f"{_ANAL_PAY_MONTH_RU[m]} {y}, ₽" for y, m in month_list]
     )
 
-    last_days = {ym: calendar.monthrange(y, m)[1] for y, m in month_list}
+    last_days = {(y, m): calendar.monthrange(y, m)[1] for y, m in month_list}
     max_day = max(last_days.values())
 
     for day in range(1, max_day + 1):
@@ -1047,7 +1047,7 @@ async def anal_payment_command(message: Message):
 
     try:
         last_days = {
-            ym: calendar.monthrange(y, m)[1] for y, m in month_list
+            (y, m): calendar.monthrange(y, m)[1] for y, m in month_list
         }
         daily_by_month = {
             ym: {d: 0 for d in range(1, last_days[ym] + 1)}
