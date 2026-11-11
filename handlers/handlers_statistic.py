@@ -44,7 +44,7 @@ _ANAL_PAY_MONTH_RU = {
 _ANAL_PAY_CHART_FILLS = ("5B9BD5", "70AD47", "ED7D31", "FFC000", "A5A5A5", "7030A0", "C55A11", "548235")
 
 
-def _anal_pay_month_period(now: datetime | None = None) -> tuple[datetime, datetime, list[tuple[int, int]]]:
+def _anal_pay_period(now: datetime | None = None) -> tuple[datetime, datetime, list[tuple[int, int]]]:
     """Период с 1 июня года «сезона» по сегодня; список (год, месяц) для колонок отчёта."""
     now = now or datetime.now()
     end_date = datetime(now.year, now.month, now.day, 23, 59, 59)
