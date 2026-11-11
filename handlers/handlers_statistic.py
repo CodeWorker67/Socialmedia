@@ -18,6 +18,7 @@ from config import ADMIN_IDS, CHECKER_IDS
 from logging_config import logger
 from config_bd.models import AsyncSessionLocal, Users, Payments, PaymentsStars, PaymentsCryptobot, PaymentsCards, \
     PaymentsPlategaCrypto, PaymentsWataSBP, PaymentsWataCard, PaymentsFkSBP, PlategaRecurent
+from config_bd.utils import _parse_traffic_duration
 
 router = Router()
 
@@ -56,6 +57,27 @@ def _anal_pay_period(now: datetime | None = None) -> tuple[datetime, datetime, l
     y0, m0 = month_list[0]
     start_date = datetime(y0, m0, 1, 0, 0, 0)
     return start_date, end_date, month_list
+
+
+def _anal_pay_payload_map(payload: str | None) -> dict[str, str]:
+    if not payload:
+        return {}
+    out: dict[str, str] = {}
+    for part in payload.split(","):
+        if ":" not in part:
+            continue
+        k, _, v = part.partition(":")
+        out[k.strip()] = v.strip()
+    return out
+
+
+def _anal_pay_is_traffic_payment(payload: str | None, is_gift: bool = False) -> bool:
+    if is_gift:
+        return False
+    m = _anal_pay_payload_map(payload)
+    if m.get("gift", "False").lower() == "true":
+        return False
+    return _parse_traffic_duration(m.get("duration")) is not None
 
 
 # ---------- Вспомогательные функции конвертации ----------
@@ -276,6 +298,7 @@ def _sync_build_analytics_excel(
 def _sync_build_anal_payment_excel(
     month_list: list[tuple[int, int]],
     daily_by_month: dict[tuple[int, int], dict[int, int]],
+    traffic_by_month: dict[tuple[int, int], int],
 ) -> str:
     wb = openpyxl.Workbook()
     ws_data = wb.active
@@ -318,6 +341,15 @@ def _sync_build_anal_payment_excel(
     ws_data.append(totals)
     total_row = max_day + 2
 
+    traffic_row = ["Итого трафик"] + [
+        int(traffic_by_month.get(ym, 0)) for ym in month_list
+    ]
+    ws_data.append(traffic_row)
+    traffic_row_idx = total_row + 1
+    last_data_row = traffic_row_idx
+
+    summary_rows = {total_row, traffic_row_idx}
+
     for col in range(1, num_cols + 1):
         cell = ws_data.cell(row=1, column=col)
         cell.fill = header_fill
@@ -325,12 +357,12 @@ def _sync_build_anal_payment_excel(
         cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
         cell.border = thin_border
 
-    for r in range(2, total_row + 1):
+    for r in range(2, last_data_row + 1):
         for c in range(1, num_cols + 1):
             cell = ws_data.cell(row=r, column=c)
             cell.border = thin_border
             cell.alignment = Alignment(horizontal="center")
-            if r == total_row:
+            if r in summary_rows:
                 cell.fill = total_fill
                 cell.font = Font(bold=True)
             if c > 1:
@@ -1053,6 +1085,7 @@ async def anal_payment_command(message: Message):
             ym: {d: 0 for d in range(1, last_days[ym] + 1)}
             for ym in month_list
         }
+        traffic_by_month = {ym: 0 for ym in month_list}
 
         def _add(dt, rub):
             if dt is None or rub is None:
@@ -1064,6 +1097,13 @@ async def anal_payment_command(message: Message):
             if day in daily_by_month[key]:
                 daily_by_month[key][day] += int(rub)
 
+        def _add_traffic_month(dt, rub, payload, is_gift=False):
+            if dt is None or rub is None or not _anal_pay_is_traffic_payment(payload, is_gift):
+                return
+            key = (dt.year, dt.month)
+            if key in traffic_by_month:
+                traffic_by_month[key] += int(rub)
+
         async with AsyncSessionLocal() as session:
             rub_models = (
                 Payments,
@@ -1074,40 +1114,65 @@ async def anal_payment_command(message: Message):
                 PaymentsFkSBP,
             )
             for model in rub_models:
-                stmt = select(model.time_created, model.amount).where(
+                stmt = select(
+                    model.time_created,
+                    model.amount,
+                    model.payload,
+                    model.is_gift,
+                ).where(
                     model.status.in_(_PAYMENT_OK_STATUSES),
                     model.time_created.between(start_date, end_date),
                 )
-                for tc, amt in (await session.execute(stmt)).all():
+                for tc, amt, payload, is_gift in (await session.execute(stmt)).all():
                     _add(tc, amt)
+                    _add_traffic_month(tc, amt, payload, is_gift)
 
-            stmt_stars = select(PaymentsStars.time_created, PaymentsStars.amount).where(
+            stmt_stars = select(
+                PaymentsStars.time_created,
+                PaymentsStars.amount,
+                PaymentsStars.payload,
+                PaymentsStars.is_gift,
+            ).where(
                 PaymentsStars.status.in_(_PAYMENT_OK_STATUSES),
                 PaymentsStars.time_created.between(start_date, end_date),
             )
-            for tc, amt in (await session.execute(stmt_stars)).all():
-                _add(tc, _stars_amount_to_rub(amt))
+            for tc, amt, payload, is_gift in (await session.execute(stmt_stars)).all():
+                rub = _stars_amount_to_rub(amt)
+                _add(tc, rub)
+                _add_traffic_month(tc, rub, payload, is_gift)
 
             stmt_crypto = select(
                 PaymentsCryptobot.time_created,
                 PaymentsCryptobot.amount,
+                PaymentsCryptobot.payload,
+                PaymentsCryptobot.is_gift,
             ).where(
                 PaymentsCryptobot.status.in_(_PAYMENT_OK_STATUSES),
                 PaymentsCryptobot.time_created.between(start_date, end_date),
             )
-            for tc, amt in (await session.execute(stmt_crypto)).all():
+            for tc, amt, payload, is_gift in (await session.execute(stmt_crypto)).all():
                 if amt is not None and float(amt) > 0.02:
-                    _add(tc, int(round(float(amt))))
+                    rub = int(round(float(amt)))
+                    _add(tc, rub)
+                    _add_traffic_month(tc, rub, payload, is_gift)
 
-            stmt_rec = select(PlategaRecurent.time_created, PlategaRecurent.amount).where(
+            stmt_rec = select(
+                PlategaRecurent.time_created,
+                PlategaRecurent.amount,
+                PlategaRecurent.payload,
+            ).where(
                 func.lower(PlategaRecurent.status).in_(_PAYMENT_OK_STATUSES),
                 PlategaRecurent.time_created.between(start_date, end_date),
             )
-            for tc, amt in (await session.execute(stmt_rec)).all():
+            for tc, amt, payload in (await session.execute(stmt_rec)).all():
                 _add(tc, amt)
+                _add_traffic_month(tc, amt, payload, False)
 
         export_path = await asyncio.to_thread(
-            _sync_build_anal_payment_excel, month_list, daily_by_month
+            _sync_build_anal_payment_excel,
+            month_list,
+            daily_by_month,
+            traffic_by_month,
         )
 
         def _fmt_rub(n: int) -> str:
@@ -1117,8 +1182,13 @@ async def anal_payment_command(message: Message):
             f"📊 Платежи по дням: {first_label} — {last_label}",
         ]
         for y, m in month_list:
-            month_sum = sum(daily_by_month[(y, m)].values())
-            caption_lines.append(f"{_ANAL_PAY_MONTH_RU[m]} {y}: {_fmt_rub(month_sum)} ₽")
+            ym = (y, m)
+            month_sum = sum(daily_by_month[ym].values())
+            traffic_sum = traffic_by_month[ym]
+            caption_lines.append(
+                f"{_ANAL_PAY_MONTH_RU[m]} {y}: {_fmt_rub(month_sum)} ₽"
+                f" (трафик: {_fmt_rub(traffic_sum)} ₽)"
+            )
 
         y0, m0 = month_list[0]
         y1, m1 = month_list[-1]
