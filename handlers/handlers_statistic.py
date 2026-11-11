@@ -27,8 +27,35 @@ _EXCLUDED_PAYMENT_AMOUNTS = {1, 10, 50}
 # Успешные статусы во всех таблицах оплат (confirmed / paid / CONFIRMED).
 _PAYMENT_OK_STATUSES = ("confirmed", "paid")
 
-_ANAL_PAY_MONTHS = (6, 7, 8)
-_ANAL_PAY_MONTH_RU = {6: "Июнь", 7: "Июль", 8: "Август"}
+_ANAL_PAY_MONTH_RU = {
+    1: "Январь",
+    2: "Февраль",
+    3: "Март",
+    4: "Апрель",
+    5: "Май",
+    6: "Июнь",
+    7: "Июль",
+    8: "Август",
+    9: "Сентябрь",
+    10: "Октябрь",
+    11: "Ноябрь",
+    12: "Декабрь",
+}
+_ANAL_PAY_CHART_FILLS = ("5B9BD5", "70AD47", "ED7D31", "FFC000", "A5A5A5", "7030A0", "C55A11", "548235")
+
+
+def _anal_pay_month_period(now: datetime | None = None) -> tuple[datetime, datetime, list[tuple[int, int]]]:
+    """Период с 1 июня года «сезона» по сегодня; список (год, месяц) для колонок отчёта."""
+    now = now or datetime.now()
+    end_date = datetime(now.year, now.month, now.day, 23, 59, 59)
+    if now.month >= 6:
+        month_list = [(now.year, m) for m in range(6, now.month + 1)]
+    else:
+        month_list = [(now.year - 1, m) for m in range(6, 13)]
+        month_list += [(now.year, m) for m in range(1, now.month + 1)]
+    y0, m0 = month_list[0]
+    start_date = datetime(y0, m0, 1, 0, 0, 0)
+    return start_date, end_date, month_list
 
 
 # ---------- Вспомогательные функции конвертации ----------
@@ -246,7 +273,10 @@ def _sync_build_analytics_excel(
     return path
 
 
-def _sync_build_anal_payment_excel(year: int, daily_by_month: dict) -> str:
+def _sync_build_anal_payment_excel(
+    month_list: list[tuple[int, int]],
+    daily_by_month: dict[tuple[int, int], dict[int, int]],
+) -> str:
     wb = openpyxl.Workbook()
     ws_data = wb.active
     ws_data.title = "Данные"
@@ -261,30 +291,34 @@ def _sync_build_anal_payment_excel(year: int, daily_by_month: dict) -> str:
     header_font = Font(bold=True, color="FFFFFF")
     total_fill = PatternFill(start_color="FFF2CC", end_color="FFF2CC", fill_type="solid")
 
+    num_cols = len(month_list) + 1
+
     ws_data.append(
-        ["День"] + [f"{_ANAL_PAY_MONTH_RU[m]} {year}, ₽" for m in _ANAL_PAY_MONTHS]
+        ["День"]
+        + [f"{_ANAL_PAY_MONTH_RU[m]} {y}, ₽" for y, m in month_list]
     )
 
-    last_days = {m: calendar.monthrange(year, m)[1] for m in _ANAL_PAY_MONTHS}
+    last_days = {ym: calendar.monthrange(y, m)[1] for y, m in month_list}
     max_day = max(last_days.values())
 
     for day in range(1, max_day + 1):
         row = [day]
-        for m in _ANAL_PAY_MONTHS:
-            if day <= last_days[m]:
-                row.append(int(daily_by_month.get(m, {}).get(day, 0)))
+        for ym in month_list:
+            y, m = ym
+            if day <= last_days[ym]:
+                row.append(int(daily_by_month.get(ym, {}).get(day, 0)))
             else:
                 row.append(None)
         ws_data.append(row)
 
     totals = ["Итого"]
-    for col_idx, m in enumerate(_ANAL_PAY_MONTHS, start=2):
+    for col_idx, ym in enumerate(month_list, start=2):
         col_letter = get_column_letter(col_idx)
-        totals.append(f"=SUM({col_letter}2:{col_letter}{last_days[m] + 1})")
+        totals.append(f"=SUM({col_letter}2:{col_letter}{last_days[ym] + 1})")
     ws_data.append(totals)
     total_row = max_day + 2
 
-    for col in range(1, 5):
+    for col in range(1, num_cols + 1):
         cell = ws_data.cell(row=1, column=col)
         cell.fill = header_fill
         cell.font = header_font
@@ -292,7 +326,7 @@ def _sync_build_anal_payment_excel(year: int, daily_by_month: dict) -> str:
         cell.border = thin_border
 
     for r in range(2, total_row + 1):
-        for c in range(1, 5):
+        for c in range(1, num_cols + 1):
             cell = ws_data.cell(row=r, column=c)
             cell.border = thin_border
             cell.alignment = Alignment(horizontal="center")
@@ -314,16 +348,16 @@ def _sync_build_anal_payment_excel(year: int, daily_by_month: dict) -> str:
     ws_charts.sheet_view.showGridLines = False
     wb.active = ws_charts
 
-    chart_fills = ("5B9BD5", "70AD47", "ED7D31")
     chart_row = 1
-    for idx, month in enumerate(_ANAL_PAY_MONTHS):
-        days = last_days[month]
-        month_total = sum(daily_by_month.get(month, {}).get(d, 0) for d in range(1, days + 1))
+    for idx, ym in enumerate(month_list):
+        y, month = ym
+        days = last_days[ym]
+        month_total = sum(daily_by_month.get(ym, {}).get(d, 0) for d in range(1, days + 1))
         total_label = f"{month_total:,}".replace(",", " ")
         chart = BarChart()
         chart.type = "col"
         chart.grouping = "clustered"
-        chart.title = f"{_ANAL_PAY_MONTH_RU[month]} {year} — {total_label} ₽"
+        chart.title = f"{_ANAL_PAY_MONTH_RU[month]} {y} — {total_label} ₽"
         chart.y_axis.title = "Платежи, ₽"
         chart.x_axis.title = "День"
         chart.y_axis.numFmt = '#,##0'
@@ -336,7 +370,9 @@ def _sync_build_anal_payment_excel(year: int, daily_by_month: dict) -> str:
         chart.add_data(data, titles_from_data=True)
         chart.set_categories(cats)
         if chart.series:
-            chart.series[0].graphicalProperties.solidFill = chart_fills[idx]
+            chart.series[0].graphicalProperties.solidFill = _ANAL_PAY_CHART_FILLS[
+                idx % len(_ANAL_PAY_CHART_FILLS)
+            ]
         ws_charts.add_chart(chart, f"A{chart_row}")
         chart_row += 20
 
@@ -994,33 +1030,39 @@ async def analytics_export(message: Message):
 
 @router.message(Command(commands=['anal_payment']))
 async def anal_payment_command(message: Message):
-    """Excel: графики успешных платежей (₽) по дням за июнь, июль, август."""
+    """Excel: графики успешных платежей (₽) по дням с июня по текущий месяц."""
     if message.from_user.id not in ADMIN_IDS:
         await message.answer("❌ Команда доступна только администраторам.")
         return
 
-    await message.answer("🔄 Формирую графики платежей за июнь–август...")
+    now = datetime.now()
+    start_date, end_date, month_list = _anal_pay_period(now)
+    if not month_list:
+        await message.answer("❌ Нет месяцев для отчёта (ожидается период с июня).")
+        return
+
+    first_label = f"{_ANAL_PAY_MONTH_RU[month_list[0][1]]} {month_list[0][0]}"
+    last_label = f"{_ANAL_PAY_MONTH_RU[month_list[-1][1]]} {month_list[-1][0]}"
+    await message.answer(f"🔄 Формирую графики платежей за {first_label} — {last_label}...")
 
     try:
-        now = datetime.now()
-        year = now.year if now.month >= 6 else now.year - 1
-        start_date = datetime(year, 6, 1, 0, 0, 0)
-        end_date = datetime(year, 8, 31, 23, 59, 59)
-
-        last_days = {m: calendar.monthrange(year, m)[1] for m in _ANAL_PAY_MONTHS}
+        last_days = {
+            ym: calendar.monthrange(y, m)[1] for y, m in month_list
+        }
         daily_by_month = {
-            m: {d: 0 for d in range(1, last_days[m] + 1)}
-            for m in _ANAL_PAY_MONTHS
+            ym: {d: 0 for d in range(1, last_days[ym] + 1)}
+            for ym in month_list
         }
 
         def _add(dt, rub):
             if dt is None or rub is None:
                 return
-            if dt.year != year or dt.month not in daily_by_month:
+            key = (dt.year, dt.month)
+            if key not in daily_by_month:
                 return
             day = dt.day
-            if day in daily_by_month[dt.month]:
-                daily_by_month[dt.month][day] += int(rub)
+            if day in daily_by_month[key]:
+                daily_by_month[key][day] += int(rub)
 
         async with AsyncSessionLocal() as session:
             rub_models = (
@@ -1065,27 +1107,31 @@ async def anal_payment_command(message: Message):
                 _add(tc, amt)
 
         export_path = await asyncio.to_thread(
-            _sync_build_anal_payment_excel, year, daily_by_month
+            _sync_build_anal_payment_excel, month_list, daily_by_month
         )
-        june_sum = sum(daily_by_month[6].values())
-        july_sum = sum(daily_by_month[7].values())
-        aug_sum = sum(daily_by_month[8].values())
 
         def _fmt_rub(n: int) -> str:
             return f"{n:,}".replace(",", " ")
 
+        caption_lines = [
+            f"📊 Платежи по дням: {first_label} — {last_label}",
+        ]
+        for y, m in month_list:
+            month_sum = sum(daily_by_month[(y, m)].values())
+            caption_lines.append(f"{_ANAL_PAY_MONTH_RU[m]} {y}: {_fmt_rub(month_sum)} ₽")
+
+        y0, m0 = month_list[0]
+        y1, m1 = month_list[-1]
+        file_label = (
+            f"anal_payment_{y0}{m0:02d}-{y1}{m1:02d}.xlsx"
+            if (y0, m0) != (y1, m1)
+            else f"anal_payment_{y0}{m0:02d}.xlsx"
+        )
+
         try:
             await message.answer_document(
-                document=FSInputFile(
-                    export_path,
-                    filename=f"anal_payment_{year}_06-08.xlsx",
-                ),
-                caption=(
-                    f"📊 Платежи по дням, {year}\n"
-                    f"Июнь: {_fmt_rub(june_sum)} ₽\n"
-                    f"Июль: {_fmt_rub(july_sum)} ₽\n"
-                    f"Август: {_fmt_rub(aug_sum)} ₽"
-                ),
+                document=FSInputFile(export_path, filename=file_label),
+                caption="\n".join(caption_lines),
             )
         finally:
             try:
