@@ -17,6 +17,18 @@ _STAT_IN_CHUNK = 900
 
 _REF_APP_SUFFIXES = frozenset({"happ", "incy"})
 
+_IGNORED_START_PAYLOADS = frozenset({"zalivbotov"})
+
+
+def ignored_start_payload_from_message_text(text: Optional[str]) -> bool:
+    """Deep link /start … — бот полностью игнорирует (без ответа и без записи в БД)."""
+    if not text:
+        return False
+    parts = text.split(maxsplit=1)
+    if len(parts) < 2:
+        return False
+    return parts[1].strip() in _IGNORED_START_PAYLOADS
+
 
 def parse_ref_start_payload(start_arg: str) -> Tuple[str, Optional[str]]:
     """

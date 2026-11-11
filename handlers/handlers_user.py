@@ -4,7 +4,11 @@ import requests
 from datetime import datetime, timezone
 
 from bot import sql, x3, bot
-from config_bd.utils import USER_IX_SUBSCRIPTION_END, parse_ref_start_payload
+from config_bd.utils import (
+    USER_IX_SUBSCRIPTION_END,
+    ignored_start_payload_from_message_text,
+    parse_ref_start_payload,
+)
 from lead_tracker import post_user_registered, post_user_trial, tracker_source_from_ref_and_stamp
 from config import CHANEL_ID, ADMIN_IDS, BOT_URL, PARTNER_PROCENT, PARTNER_MIN, PARTNER_SUPPORT_URL, PUBLIC_SITE_URL, CHECKER_ID
 from keyboard import (keyboard_tariff_bonus, keyboard_tariff,
@@ -105,6 +109,8 @@ async def _panel_regular_subscription_is_active(uid: int) -> bool:
 # Этот хэндлер срабатывает на команду /start
 @router.message(Command(commands="start"))
 async def process_start_command(message: Message, command: Command):
+    if ignored_start_payload_from_message_text(message.text):
+        return
 
     user_data = await sql.get_user(message.from_user.id)
     had_row_before = user_data is not None

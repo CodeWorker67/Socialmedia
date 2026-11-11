@@ -8,6 +8,7 @@ from aiogram import BaseMiddleware
 from aiogram.types import TelegramObject, Update, User
 
 from bot import sql
+from config_bd.utils import ignored_start_payload_from_message_text
 from logging_config import logger
 from middleware.user_throttle import _actor_from_update
 
@@ -44,6 +45,9 @@ class SyncTgProfileMiddleware(BaseMiddleware):
         data: Dict[str, Any],
     ) -> Any:
         if isinstance(event, Update):
+            msg = event.message or event.edited_message
+            if msg and ignored_start_payload_from_message_text(msg.text):
+                return await handler(event, data)
             await maybe_sync_tg_profile_to_db(_actor_from_update(event))
         else:
             from_user = data.get("event_from_user")
