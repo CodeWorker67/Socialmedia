@@ -61,6 +61,7 @@ from wl_traffic.service import (
     credit_wl_subscription_bonus,
     fetch_panel_user,
     reassign_to_active_squad,
+    subscription_bonus_gb,
     user_on_limited_squad,
 )
 
@@ -74,7 +75,7 @@ _R120_PAYMENT_TEXT = (
     "🎁 Акция: 3 + 1 месяц в подарок!\n"
     "Ускоритель соцсетей — стабильный доступ к Instagram, YouTube и другим сервисам.\n"
     "5 устройств, безлимитный трафик на обычные сервера.\n\n"
-    "📡 Антиглушилка: <b>+40 GB</b> трафика включено в тариф.\n\n"
+    f"📡 Антиглушилка: <b>+{subscription_bonus_gb(120):g} GB</b> трафика включено в тариф.\n\n"
     "<b>Подписка начисляется в течении 1 часа</b>\n\n"
     "Выберите способ оплаты:"
 )

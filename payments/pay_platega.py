@@ -9,6 +9,8 @@ from config import PLATEGA_API_KEY, PLATEGA_MERCHANT_ID, ADMIN_IDS, BOT_URL
 from keyboard import keyboard_payment_sbp, create_kb, BTN_BACK
 from lexicon import dct_price, dct_desc, lexicon
 from logging_config import logger
+from payments.tariff_gate import panel_days_from_tariff_key
+from wl_traffic.texts import format_pro_payment_link
 
 router = Router()
 
@@ -222,9 +224,10 @@ async def process_payment_sbp(callback: CallbackQuery):
 
     if payment_info['status'] == 'pending':
         try:
-            text = lexicon['payment_link']
             if white_flag:
                 text = lexicon['payment_link_white']
+            else:
+                text = format_pro_payment_link(panel_days_from_tariff_key(desc_key))
             if 'gift' in callback.data:
                 text += '\n\nДля оплаты <b>подарочной подписки</b> перейдите по ссылке:'
             else:
@@ -283,9 +286,10 @@ async def process_payment_card(callback: CallbackQuery):
 
     if payment_info['status'] == 'pending':
         try:
-            text = lexicon['payment_link']
             if white_flag:
                 text = lexicon['payment_link_white']
+            else:
+                text = format_pro_payment_link(panel_days_from_tariff_key(desc_key))
             if 'gift' in callback.data:
                 text += '\n\nДля оплаты <b>подарочной подписки</b> перейдите по ссылке:'
             else:

@@ -775,7 +775,7 @@ class AsyncSQL:
             await session.commit()
 
     async def init_wl_trial_limits(self, user_id: int) -> None:
-        """При первом триале (limit_wl=0): trafic_wl=0, limit_wl=2 GB. Иначе не трогаем."""
+        """При первом триале (limit_wl=0): trafic_wl=0, limit_wl=1 GB. Иначе не трогаем."""
         from wl_traffic.constants import WL_TRIAL_LIMIT_GB
 
         async with self.session_factory() as session:

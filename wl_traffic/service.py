@@ -12,7 +12,8 @@ from wl_traffic.constants import (
     FOREVER_DURATION_DAYS,
     FOREVER_END_CUTOFF,
     WL_DAY_RESET_HOUR,
-    WL_GB_PER_MONTH,
+    WL_FOREVER_MONTHLY_GB,
+    WL_GB_PER_SUBSCRIPTION_MONTH,
     WL_LEGACY_RETRIES,
     WL_LOW_TRAFFIC_WARNING_GB,
     WL_NODE_NAMES,
@@ -21,6 +22,7 @@ from wl_traffic.constants import (
     WL_SQUAD_LIMITED,
     WL_SUBSCRIPTION_MONTHS,
     WL_TIMEZONE,
+    WL_WEEK_BONUS_GB,
 )
 
 _BYTES_PER_GB = 1024 ** 3
@@ -78,11 +80,11 @@ def is_forever_end_date(end_date: datetime | date | None) -> bool:
 
 def subscription_bonus_gb(duration_days: int) -> float:
     if duration_days == 7:
-        return 3.0
+        return float(WL_WEEK_BONUS_GB)
     if is_forever_duration(duration_days):
-        return float(WL_GB_PER_MONTH)
+        return float(WL_FOREVER_MONTHLY_GB)
     months = WL_SUBSCRIPTION_MONTHS.get(duration_days, max(0, duration_days // 30))
-    return float(months * WL_GB_PER_MONTH)
+    return float(months * WL_GB_PER_SUBSCRIPTION_MONTH)
 
 
 async def credit_wl_subscription_bonus(sql, user_id: int, duration_days: int) -> None:

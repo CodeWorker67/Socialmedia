@@ -8,7 +8,7 @@ from aiogram.exceptions import TelegramNetworkError
 
 from bot import sql, x3
 from logging_config import logger
-from wl_traffic.constants import WL_GB_PER_MONTH
+from wl_traffic.constants import WL_FOREVER_MONTHLY_GB
 from wl_traffic.service import (
     fetch_panel_user,
     reassign_to_active_squad,
@@ -31,7 +31,7 @@ async def credit_forever_wl_monthly_cron(bot: Bot) -> None:
         credited = 0
         for billing_uid in users:
             try:
-                await sql.add_wl_limit(billing_uid, float(WL_GB_PER_MONTH))
+                await sql.add_wl_limit(billing_uid, float(WL_FOREVER_MONTHLY_GB))
                 panel_user = await fetch_panel_user(x3, billing_uid)
                 if panel_user and user_on_limited_squad(panel_user):
                     await reassign_to_active_squad(x3, panel_user)
@@ -61,7 +61,7 @@ async def credit_forever_wl_monthly_cron(bot: Bot) -> None:
                 logger.error(f"credit_forever_wl_monthly: uid={billing_uid}: {e}")
 
         logger.info(
-            f"credit_forever_wl_monthly: начислено +{WL_GB_PER_MONTH:g} GB "
+            f"credit_forever_wl_monthly: начислено +{WL_FOREVER_MONTHLY_GB:g} GB "
             f"пользователям: {credited}/{len(users)}"
         )
     except Exception as e:

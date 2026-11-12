@@ -28,8 +28,11 @@ WL_SQUAD_ACTIVE = (
     "85f8520a-8dd7-40a6-9f27-8a7467096c6a",
 )
 
-WL_TRIAL_LIMIT_GB = 2.0
-WL_GB_PER_MONTH = 10
+WL_TRIAL_LIMIT_GB = 1.0
+WL_WEEK_BONUS_GB = 1.0
+WL_GB_PER_SUBSCRIPTION_MONTH = 3
+WL_FOREVER_MONTHLY_GB = 10
+WL_GB_PER_MONTH = WL_FOREVER_MONTHLY_GB  # крон «Навсегда», админка
 WL_LOW_TRAFFIC_WARNING_GB = 1.0
 
 # Тариф «Навсегда» (5000 дней) — expire далеко за 2030
@@ -47,15 +50,13 @@ WL_TRAFFIC_TARIFFS: dict[str, int] = {
     "500": 1249,
 }
 
-# duration days -> months for +10 GB/month bonus on subscription payment
+# duration days -> месяцы для бонуса +3 GB за каждый месяц тарифа (кроме 7 дней и Навсегда)
 WL_SUBSCRIPTION_MONTHS: dict[int, int] = {
-    7: 0,
     30: 1,
     90: 3,
     120: 4,
     180: 6,
     365: 12,
-    FOREVER_DURATION_DAYS: 1,
 }
 
 PROFILE_CB = "user_profile"
