@@ -1117,6 +1117,56 @@ async def sync_panel(message: Message):
     logger.info(report)
 
 
+def _billing_uid_from_panel_user(panel_user: dict) -> Optional[int]:
+    """Telegram id владельца из username панели ('123' или '123_white'), иначе из telegramId."""
+    username = str(panel_user.get('username') or '')
+    if username.endswith('_white'):
+        username = username[:-len('_white')]
+    if username.isdigit():
+        return int(username)
+    tg_id = panel_user.get('telegramId')
+    if tg_id is not None:
+        try:
+            return int(tg_id)
+        except (TypeError, ValueError):
+            return None
+    return None
+
+
+@router.message(Command(commands=['refresh_isdelete_active']))
+async def refresh_isdelete_active(message: Message):
+    """is_delete=False всем, у кого сейчас есть хотя бы одна активная подписка в панели."""
+    if message.from_user.id not in ADMIN_IDS:
+        return
+
+    await message.answer("🔄 Проверяю активные подписки в панели...")
+
+    users_panel = await x3.get_all_users()
+    if not users_panel:
+        await message.answer("Не удалось получить пользователей из панели.")
+        return
+
+    active_ids: set[int] = set()
+    for panel_user in users_panel:
+        try:
+            if not x3._panel_user_is_active(panel_user):
+                continue
+        except Exception as e:
+            logger.warning(f"refresh_isdelete_active: пропуск {panel_user.get('username')}: {e}")
+            continue
+        uid = _billing_uid_from_panel_user(panel_user)
+        if uid is not None and is_telegram_chat_id(uid):
+            active_ids.add(uid)
+
+    changed = await sql.reset_is_delete_for_users(sorted(active_ids))
+    report = (
+        f"✅ Столько юзеров с активной подпиской: {len(active_ids)}\n"
+        f"🔄 is_delete сброшен в False у: {changed}"
+    )
+    await message.answer(report)
+    logger.info(report)
+
+
 @router.message(Command(commands=['shortuuid_export']))
 async def shortuuid_export(message: Message):
     """Синхронизация shortUuid из панели в поле subscribtion в БД."""

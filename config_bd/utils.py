@@ -803,6 +803,31 @@ class AsyncSQL:
                 user.field_bool_2 = False
             await session.commit()
 
+    async def has_traffic_gift(self, user_id: int) -> Optional[bool]:
+        """None — пользователя нет в БД; иначе значение traffic_gift."""
+        async with self.session_factory() as session:
+            stmt = select(Users.traffic_gift).where(Users.user_id == user_id)
+            result = await session.execute(stmt)
+            row = result.one_or_none()
+            if row is None:
+                return None
+            return bool(row[0])
+
+    async def claim_traffic_gift(self, user_id: int) -> bool:
+        """Атомарно ставит traffic_gift=True. False — уже получен или пользователя нет."""
+        async with self.session_factory() as session:
+            stmt = (
+                update(Users)
+                .where(
+                    Users.user_id == user_id,
+                    or_(Users.traffic_gift.is_(None), Users.traffic_gift == False),
+                )
+                .values(traffic_gift=True)
+            )
+            result = await session.execute(stmt)
+            await session.commit()
+            return bool(result.rowcount)
+
     async def update_trafic_wl(self, user_id: int, gb: float) -> None:
         async with self.session_factory() as session:
             stmt = (
@@ -910,6 +935,26 @@ class AsyncSQL:
             stmt = update(Users).where(Users.user_id == user_id).values(is_delete=booly)
             await session.execute(stmt)
             await session.commit()
+
+    async def reset_is_delete_for_users(self, user_ids: List[int], chunk: int = 500) -> int:
+        """is_delete=False для списка пользователей. Возвращает, у скольких значение реально изменилось."""
+        ids = list(user_ids)
+        changed = 0
+        async with self.session_factory() as session:
+            for i in range(0, len(ids), chunk):
+                part = ids[i:i + chunk]
+                stmt = (
+                    update(Users)
+                    .where(
+                        Users.user_id.in_(part),
+                        or_(Users.is_delete.is_(None), Users.is_delete == True),
+                    )
+                    .values(is_delete=False)
+                )
+                result = await session.execute(stmt)
+                changed += int(result.rowcount or 0)
+            await session.commit()
+        return changed
 
     async def select_ref_count(self, user_id: int) -> int:
         async with self.session_factory() as session:

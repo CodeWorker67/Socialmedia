@@ -27,6 +27,8 @@ from keyboard import (
 )
 from logging_config import logger
 from telegram_ids import is_telegram_chat_id
+from wl_traffic.constants import TRAFFIC_GIFT_CB, TRAFFIC_GIFT_GB
+from wl_traffic.service import fetch_panel_user, reassign_to_active_squad, user_on_active_squad
 
 router = Router()
 
@@ -78,6 +80,7 @@ CUSTOM_PRESETS = [
     ("get_trial", "get_trial", "🎁 Получить триал — 7 дней", STYLE_SUCCESS),
     ("buy_vpn", "buy_vpn", "💰 Купить подписку", STYLE_PRIMARY),
     ("connect_vpn", BC_SHOW_SUBS_CB, "🔗 Подключить VPN", STYLE_PRIMARY),
+    ("traffic_gift", TRAFFIC_GIFT_CB, "🎁 3 ГБ в подарок", STYLE_SUCCESS),
     ("ref", "ref", "👭 Реферальная программа", None),
     ("buy_gift", "buy_gift", "🎁 Подарить подписку", None),
     ("ref_invite", "ref_invite", "Пригласить друзей🫶", None),
@@ -746,3 +749,59 @@ async def broadcast_show_active_subs(callback: CallbackQuery):
             )
         except Exception as send_err:
             logger.error("bc_show_subs: fallback send failed: {}", send_err)
+
+
+_TRAFFIC_GIFT_DONE_TEXT = "Вам добавлено 3 ГБ к лимиту, обновите подписку в приложении"
+
+
+def _markup_without_callback(markup: InlineKeyboardMarkup | None, cb: str) -> InlineKeyboardMarkup | None:
+    if markup is None:
+        return None
+    rows = []
+    for row in markup.inline_keyboard:
+        kept = [b for b in row if b.callback_data != cb]
+        if kept:
+            rows.append(kept)
+    return InlineKeyboardMarkup(inline_keyboard=rows) if rows else None
+
+
+@router.callback_query(F.data == TRAFFIC_GIFT_CB)
+async def broadcast_traffic_gift(callback: CallbackQuery):
+    """Кнопка «3 ГБ в подарок» под рассылкой: однократно +3 ГБ к limit_wl."""
+    uid = callback.from_user.id
+    already = await sql.has_traffic_gift(uid)
+    if already is None:
+        await callback.answer("Пользователь не найден. Нажмите /start", show_alert=True)
+        return
+    if already or not await sql.claim_traffic_gift(uid):
+        await callback.answer("Вам уже добавлено 3 ГБ к лимиту", show_alert=True)
+        return
+
+    await callback.answer()
+    await sql.add_wl_limit(uid, TRAFFIC_GIFT_GB)
+    logger.info(f"traffic_gift: +{TRAFFIC_GIFT_GB} GB user={uid}")
+
+    msg = callback.message
+    if msg is not None:
+        new_markup = _markup_without_callback(msg.reply_markup, TRAFFIC_GIFT_CB)
+        try:
+            if msg.text is not None:
+                await msg.edit_text(_TRAFFIC_GIFT_DONE_TEXT, reply_markup=new_markup)
+            elif msg.caption is not None or msg.photo or msg.video or msg.document or msg.animation:
+                await msg.edit_caption(caption=_TRAFFIC_GIFT_DONE_TEXT, reply_markup=new_markup)
+            else:
+                await msg.edit_reply_markup(reply_markup=new_markup)
+                await msg.answer(_TRAFFIC_GIFT_DONE_TEXT)
+        except Exception as e:
+            logger.warning(f"traffic_gift: edit message failed user={uid}: {e}")
+            try:
+                await msg.answer(_TRAFFIC_GIFT_DONE_TEXT)
+            except Exception as send_err:
+                logger.error(f"traffic_gift: fallback send failed user={uid}: {send_err}")
+
+    try:
+        panel_user = await fetch_panel_user(x3, uid)
+        if panel_user and not user_on_active_squad(panel_user):
+            await reassign_to_active_squad(x3, panel_user)
+    except Exception as e:
+        logger.error(f"traffic_gift: не удалось переназначить squad user={uid}: {e}")

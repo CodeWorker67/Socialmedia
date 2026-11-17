@@ -46,6 +46,7 @@ class Users(Base):
     partner_flag = Column(Boolean, default=False)
     trafic_wl = Column(Float, default=0.0)
     limit_wl = Column(Float, default=0.0)
+    traffic_gift = Column(Boolean, default=False)
     username = Column(String, nullable=True)
     fullname = Column(String, nullable=True)
 

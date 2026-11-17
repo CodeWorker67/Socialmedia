@@ -2,6 +2,7 @@
 Миграция таблицы users — лимит трафика Антиглушилка:
 - trafic_wl FLOAT DEFAULT 0  (GB)
 - limit_wl FLOAT DEFAULT 0   (GB)
+- traffic_gift BOOLEAN DEFAULT 0  (получен подарок 3 ГБ из рассылки)
 
 Запуск из корня проекта:
   python -m config_bd.migrate_users_wl_fields
@@ -23,6 +24,7 @@ from config_bd.models import engine
 _COLUMNS = (
     ("trafic_wl", "FLOAT DEFAULT 0"),
     ("limit_wl", "FLOAT DEFAULT 0"),
+    ("traffic_gift", "BOOLEAN DEFAULT 0"),
 )
 
 
@@ -47,8 +49,9 @@ async def migrate() -> None:
 
         await conn.execute(text("UPDATE users SET trafic_wl = 0 WHERE trafic_wl IS NULL"))
         await conn.execute(text("UPDATE users SET limit_wl = 0 WHERE limit_wl IS NULL"))
+        await conn.execute(text("UPDATE users SET traffic_gift = 0 WHERE traffic_gift IS NULL"))
 
-    print("OK: users trafic_wl, limit_wl.")
+    print("OK: users trafic_wl, limit_wl, traffic_gift.")
 
 
 def main() -> None:
