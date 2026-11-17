@@ -527,12 +527,6 @@ def keyboard_payment_method(tarif):
                 callback_data=f"stars_{tarif}",
             )
         ],
-        [
-            InlineKeyboardButton(
-                text="💎 Crypto bot",
-                callback_data=f"crypto_{tarif}",
-            )
-        ],
         [InlineKeyboardButton(text=BTN_BACK, callback_data="back_to_buy_menu")],
     ]
     return InlineKeyboardMarkup(inline_keyboard=rows)
@@ -557,12 +551,6 @@ def keyboard_payment_method_stock(tarif):
                 InlineKeyboardButton(
                     text="⭐️ Telegram Stars",
                     callback_data=f"stars_{tarif}",
-                )
-            ],
-            [
-                InlineKeyboardButton(
-                    text="💎 Crypto bot",
-                    callback_data=f"crypto_{tarif}",
                 )
             ],
         ]
@@ -814,12 +802,6 @@ def keyboard_discount_push_payment(duration: str) -> InlineKeyboardMarkup:
         ],
         [
             InlineKeyboardButton(
-                text="💎 Crypto bot",
-                callback_data=f"dpush_crypto_{duration}",
-            )
-        ],
-        [
-            InlineKeyboardButton(
                 text=BTN_BACK,
                 callback_data="dpush_back_tariffs",
             )
@@ -864,12 +846,6 @@ def keyboard_wl_traffic_payment_method(mb: str, *, back_callback: str = WL_TRAFF
             InlineKeyboardButton(
                 text="⭐️ Telegram Stars",
                 callback_data=f"wl_traffic_stars_{mb}",
-            )
-        ],
-        [
-            InlineKeyboardButton(
-                text="💎 Crypto bot",
-                callback_data=f"wl_traffic_crypto_{mb}",
             )
         ],
         [InlineKeyboardButton(text=BTN_BACK, callback_data=back_callback)],

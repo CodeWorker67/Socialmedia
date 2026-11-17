@@ -107,40 +107,4 @@ async def wl_traffic_pay_stars(callback: CallbackQuery):
 
 @router.callback_query(F.data.startswith("wl_traffic_crypto_"))
 async def wl_traffic_pay_crypto(callback: CallbackQuery):
-    await callback.answer()
-    gb = (callback.data or "").replace("wl_traffic_crypto_", "")
-    if gb not in WL_TRAFFIC_TARIFFS:
-        return
-
-    user_id = callback.from_user.id
-    rub_amount = _traffic_price(gb, user_id)
-    duration = _traffic_duration(gb)
-
-    result = await create_cryptobot_payment(
-        rub_amount=rub_amount,
-        description=f"Трафик Антиглушилка {gb} GB",
-        user_id=user_id,
-        duration=duration,
-        white=False,
-        is_gift=False,
-        source=BOT,
-    )
-
-    if result["status"] == "pending":
-        pay_keyboard = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(
-                text=f"💎 Оплатить криптой · {rub_amount} ₽",
-                url=result["url"],
-            )]
-        ])
-        await edit_or_send_photo(
-            callback,
-            "buy_traffic",
-            lexicon["wl_traffic_payment_link"].format(gb=gb),
-            pay_keyboard,
-        )
-    else:
-        await callback.message.answer(
-            lexicon.get("error_payment", "Произошла ошибка при создании счета."),
-            reply_markup=create_kb(1, back_to_main=BTN_BACK),
-        )
+    await callback.answer("Этот метод недействителен", show_alert=True)
