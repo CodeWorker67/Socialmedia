@@ -33,12 +33,13 @@ class CryptoBotPayment:
 
     async def create_invoice(self, fiat_amount: float, fiat_currency: str, description: str,
                              payload: str, expires_in: int = 7200) -> Dict:
-        """Создание счета в Cryptobot с суммой в фиате — пользователь сам выбирает криптовалюту"""
+        """Счёт в фиате; оплата только в TON (GRAM) через Crypto Bot."""
         url = f"{self.base_url}/createInvoice"
         data = {
             "currency_type": "fiat",
             "fiat": fiat_currency,
             "amount": str(fiat_amount),
+            "accepted_assets": "TON",
             "description": description,
             "payload": payload,
             "paid_btn_name": "openBot",
@@ -101,7 +102,7 @@ async def create_cryptobot_payment(rub_amount: int, description: str,
                                    payload_suffix: str = "") -> Dict:
     """
     Создание платежа через Cryptobot с суммой в рублях.
-    Пользователь сам выбирает криптовалюту внутри Cryptobot.
+    Счёт в рублях; оплата только TON (GRAM) в Crypto Bot.
     """
     if not await payment_creation_allowed(int(user_id), telegram_username):
         return {"status": "rate_limited", "url": "", "invoice_id": ""}
@@ -141,4 +142,65 @@ async def create_cryptobot_payment(rub_amount: int, description: str,
 
 @router.callback_query(F.data.startswith('crypto_'))
 async def process_payment_crypto(callback: CallbackQuery):
-    await callback.answer("Этот метод недействителен", show_alert=True)
+    await callback.answer()
+    gift_flag = False
+    white_flag = False
+    data = callback.data
+    user_id = callback.from_user.id
+
+    if 'gift_' in data:
+        gift_flag = True
+
+    if gift_flag:
+        duration_key = data.replace('crypto_gift_r_', '')
+    else:
+        duration_key = data.replace('crypto_r_', '')
+
+    rub_amount = dct_price[duration_key]
+    desc_key = duration_key
+
+    if 'white' in duration_key:
+        white_flag = True
+        duration = duration_key.replace('white_', '')
+    elif 'old' in duration_key:
+        duration = duration_key.replace('old', '')
+    else:
+        duration = duration_key
+
+    panel_days = panel_days_from_tariff_key(duration)
+
+    if callback.from_user.id in ADMIN_IDS:
+        rub_amount = 1
+
+    if gift_flag:
+        description = f"Подписка в подарок {dct_desc[desc_key]}"
+    else:
+        description = dct_desc[desc_key]
+
+    result = await create_cryptobot_payment(
+        rub_amount=rub_amount,
+        description=description,
+        user_id=user_id,
+        duration=duration,
+        white=white_flag,
+        is_gift=gift_flag
+    )
+
+    if result['status'] == 'pending':
+        text = lexicon['payment_link_white'] if white_flag else format_pro_payment_link(
+            panel_days_from_tariff_key(duration)
+        )
+        if gift_flag:
+            text += '\n\nДля оплаты <b>подарочной подписки</b> перейдите по ссылке:'
+        else:
+            text += '\n\nДля оплаты тарифа перейдите по ссылке:'
+        pay_keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text=f"💎 Оплатить GRAM · {rub_amount} ₽", url=result['url'])]
+        ])
+        await edit_or_send_photo(callback, "buy_subscription", text, pay_keyboard)
+        logger.info(f"Юзер {user_id} создал счет в Cryptobot на {rub_amount} руб {'(подарок)' if gift_flag else ''}")
+    else:
+        await callback.message.answer(
+            lexicon.get('error_payment', 'Произошла ошибка при создании счета.'),
+            reply_markup=create_kb(1, back_to_main=BTN_BACK)
+        )

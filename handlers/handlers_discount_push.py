@@ -209,7 +209,49 @@ async def discount_push_pay_card(callback: CallbackQuery):
 
 @router.callback_query(F.data.startswith("dpush_crypto_"))
 async def discount_push_pay_crypto(callback: CallbackQuery):
-    await callback.answer("Этот метод недействителен", show_alert=True)
+    duration = _duration_from_callback(callback.data or "", "dpush_crypto_")
+    if not duration:
+        await callback.answer("Неизвестный тариф.", show_alert=True)
+        return
+    await callback.answer()
+
+    rub_amount = dct_price_discount_33[duration]
+    if callback.from_user.id in ADMIN_IDS:
+        rub_amount = 1
+    description = f"{dct_desc_discount_33[duration]} (скидка 33%)"
+
+    result = await create_cryptobot_payment(
+        rub_amount=rub_amount,
+        description=description,
+        user_id=callback.from_user.id,
+        duration=duration,
+        white=False,
+        is_gift=False,
+        source=BOT,
+        payload_suffix=_DISCOUNT_PAYLOAD_SUFFIX,
+    )
+
+    if result["status"] == "pending":
+        text = format_pro_payment_link(int(duration)) + "\n\nДля оплаты тарифа перейдите по ссылке:"
+        pay_keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(
+                text=f"💎 Оплатить GRAM · {rub_amount} ₽",
+                url=result["url"],
+            )]
+        ])
+        await _delete_and_answer(callback, text, pay_keyboard)
+    elif result.get("status") == "rate_limited":
+        await _delete_and_answer(
+            callback,
+            lexicon["payment_too_many_pending"].format(PAYMENT_MAX_PENDING_PER_USER),
+            create_kb(1, back_to_main="🔙 Назад"),
+        )
+    else:
+        await _delete_and_answer(
+            callback,
+            lexicon.get("error_payment", "Произошла ошибка при создании счета."),
+            create_kb(1, back_to_main="🔙 Назад"),
+        )
 
 
 @router.callback_query(F.data.startswith("dpush_stars_"))
