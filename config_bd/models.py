@@ -1,6 +1,6 @@
 import logging
 
-from sqlalchemy import Column, Integer, String, DateTime, Boolean, BigInteger, Date, Float, event
+from sqlalchemy import Column, Integer, String, DateTime, Boolean, BigInteger, Date, Float, Text, ForeignKey, event
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncAttrs
 from sqlalchemy.orm import DeclarativeBase
 from datetime import datetime
@@ -49,6 +49,28 @@ class Users(Base):
     traffic_gift = Column(Boolean, default=False)
     username = Column(String, nullable=True)
     fullname = Column(String, nullable=True)
+    yandex_id = Column(String(100), nullable=True)
+
+
+class SecondSite(Base):
+    """Данные landing-сайта (OTP/Google/phone/WA), связь с users по tg_id (= users.user_id)."""
+    __tablename__ = 'second_site'
+
+    id = Column(Integer, primary_key=True)
+    tg_id = Column(
+        BigInteger,
+        ForeignKey('users.user_id', ondelete='CASCADE'),
+        unique=True,
+        nullable=False,
+    )
+    email = Column(Text, nullable=True, unique=True)
+    google_sub = Column(String(255), nullable=True, unique=True)
+    activation_pass = Column(String(255), nullable=True)
+    site_url = Column(String(512), nullable=True)
+    verified = Column(Boolean, default=False)
+    password = Column(Text, nullable=True)
+    phone = Column(String(16), nullable=True, unique=True)
+    whatsapp_id = Column(String(32), nullable=True, unique=True)
 
 
 class WlTrafficMeta(Base):

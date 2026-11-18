@@ -10,6 +10,7 @@ from config_bd.utils import (
     parse_ref_start_payload,
 )
 from lead_tracker import post_user_registered, post_user_trial, tracker_source_from_ref_and_stamp
+from services.yandex_metrica import report_trial_to_metrica
 from config import CHANEL_ID, ADMIN_IDS, BOT_URL, PARTNER_PROCENT, PARTNER_MIN, PARTNER_SUPPORT_URL, PUBLIC_SITE_URL, CHECKER_ID
 from keyboard import (keyboard_tariff_bonus, keyboard_tariff,
                       ref_keyboard, keyboard_gift_tariff, keyboard_payment_method,
@@ -121,6 +122,7 @@ async def process_start_command(message: Message, command: Command):
     partner_login = ''
     existing = False
     stamp = ''
+    yandex_id = None
     ttclid = None
 
     if user_data:
@@ -158,6 +160,23 @@ async def process_start_command(message: Message, command: Command):
                 logger.success(
                     f'Юзер {message.from_user.id} - {message.from_user.username} зашел в бота в первый раз по реферальной ссылкой')
                 ref_login, ref_app = parse_ref_start_payload(start_arg)
+
+        elif start_arg.startswith('YD'):
+            from utils.yd_start import parse_yd_start_arg
+
+            if user_data:
+                logger.info(
+                    f'Юзер {message.from_user.id} - {message.from_user.username} '
+                    f'нажал старт повторно с Yandex-меткой'
+                )
+            else:
+                logger.success(
+                    f'Юзер {message.from_user.id} - {message.from_user.username} '
+                    f'зашел в бота в первый раз по Yandex-метке'
+                )
+                parsed = parse_yd_start_arg(start_arg)
+                if parsed:
+                    stamp, yandex_id = parsed
 
         elif start_arg.startswith('gift_') or 'gift_' in start_arg:
             logger.info(
@@ -249,7 +268,7 @@ async def process_start_command(message: Message, command: Command):
     if not existing:
         inserted = await sql.add_user(
             message.from_user.id, False, False,
-            ref=ref_login, stamp=stamp, partner=partner_login,
+            ref=ref_login, stamp=stamp, partner=partner_login, yandex_id=yandex_id,
         )
         if inserted:
             logger.info(f'Юзер {message.from_user.id} - {message.from_user.username} добавлен в БД')
@@ -407,6 +426,10 @@ async def _issue_broadcast_trial(callback: CallbackQuery) -> bool:
 
     if not panel_exists:
         await post_user_trial(uid)
+        try:
+            await report_trial_to_metrica(uid)
+        except Exception as e:
+            logger.warning("Yandex Metrica trial user {}: {}", uid, e)
 
     sub_url = await x3.sublink(user_id_str)
     end_time = await subscription_end_display(uid)
@@ -527,6 +550,10 @@ async def free_vpn_cb(callback: CallbackQuery):
         keyboard_subscription_manage(sub_url or ""),
     )
     await post_user_trial(callback.from_user.id)
+    try:
+        await report_trial_to_metrica(callback.from_user.id)
+    except Exception as e:
+        logger.warning("Yandex Metrica trial user {}: {}", callback.from_user.id, e)
 
 
 @router.callback_query(F.data == 'info')

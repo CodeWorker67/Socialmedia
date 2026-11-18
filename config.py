@@ -79,5 +79,25 @@ UNISENDER_GO_API_URL: str = (
 ).strip().rstrip("/")
 UNISENDER_GO_FROM_NAME: str = (os.environ.get("UNISENDER_GO_FROM_NAME") or "SocialmediaVPN").strip()
 
+LOGINBOT_API_KEY: Optional[str] = (os.environ.get("LOGINBOT_API_KEY") or "").strip() or None
+
+WHATSAPP_ACCESS_TOKEN: Optional[str] = (os.environ.get("WHATSAPP_ACCESS_TOKEN") or "").strip() or None
+WHATSAPP_PHONE_NUMBER_ID: Optional[str] = (os.environ.get("WHATSAPP_PHONE_NUMBER_ID") or "").strip() or None
+WHATSAPP_VERIFY_TOKEN: Optional[str] = (os.environ.get("WHATSAPP_VERIFY_TOKEN") or "").strip() or None
+WHATSAPP_APP_SECRET: Optional[str] = (os.environ.get("WHATSAPP_APP_SECRET") or "").strip() or None
+WHATSAPP_API_VERSION: str = (os.environ.get("WHATSAPP_API_VERSION") or "v21.0").strip()
+WHATSAPP_WA_ME_NUMBER: Optional[str] = (os.environ.get("WHATSAPP_WA_ME_NUMBER") or "").strip() or None
+WHATSAPP_AUTH_CODE_TTL_SEC: int = int(os.environ.get("WHATSAPP_AUTH_CODE_TTL_SEC", "180"))
+
+LANDING_SITE_URL: str = (os.environ.get("LANDING_SITE_URL") or PUBLIC_SITE_URL or "http://localhost:5173").strip().rstrip("/")
+
+YANDEX_ACCESS_TOKEN: Optional[str] = (os.environ.get("YANDEX_ACCESS_TOKEN") or "").strip() or None
+YANDEX_METRIKA_HAPP_NOW_COUNTER_ID: int = int(
+    os.environ.get("YANDEX_METRIKA_HAPP_NOW_COUNTER_ID", "114348001")
+)
+YANDEX_METRIKA_TRIAL_GOAL_TARGET: str = (
+    os.environ.get("YANDEX_METRIKA_TRIAL_GOAL_TARGET") or "trial"
+).strip()
+
 # file_id картинки для рассылки /discount_push
 DISCOUNT_PUSH_PHOTO_ID: str = (os.environ.get("DISCOUNT_PUSH_PHOTO_ID") or "AgACAgQAAxkBAAGLsp1qTOJ_gvKWp9to4yEw-h_u6MnQ2wACrg5rG0k0aFLtvGXwmsbjjQEAAwIAA3kAAzwE").strip()

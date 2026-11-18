@@ -722,7 +722,7 @@ class AsyncSQL:
 
     async def add_user(self, user_id: int, in_panel: bool, is_connect: bool = False,
                      ref: str = '', is_delete: bool = False, in_chanel: bool = False,
-                     stamp='', partner: str = '') -> bool:
+                     stamp='', partner: str = '', yandex_id: Optional[str] = None) -> bool:
         """Возвращает True, если пользователь был вставлен; False если уже существовал (гонки /start)."""
         async with self.session_factory() as session:
             stmt = sqlite_insert(Users).values(
@@ -734,6 +734,7 @@ class AsyncSQL:
                 is_connect=is_connect,
                 in_chanel=in_chanel,
                 stamp=stamp,
+                yandex_id=yandex_id or None,
             ).on_conflict_do_nothing(index_elements=[Users.user_id])
             try:
                 result = await session.execute(stmt)

@@ -5,6 +5,7 @@ from X3 import X3
 from config import TG_TOKEN
 from typing import Optional
 from config_bd.utils import AsyncSQL
+import config_bd.landing_sql  # noqa: F401 — расширяет AsyncSQL для landing
 
 # Инициализация бота Telegram и классов БД и панели
 bot: Optional[Bot] = Bot(token=TG_TOKEN, default=DefaultBotProperties(parse_mode='HTML'))

@@ -1887,3 +1887,8 @@ async def user_change_password(ctx: JwtCtx, body: ChangePasswordIn):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Неверный текущий пароль")
     await sql.set_password_hash_by_internal_id(int(row[0]), _hash_password(body.new_password))
     return {"success": True}
+
+
+from landing_api import landing_router  # noqa: E402
+
+app.include_router(landing_router)

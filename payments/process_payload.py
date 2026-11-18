@@ -20,6 +20,7 @@ from wl_traffic.service import (
     user_on_limited_squad,
 )
 from wl_traffic.texts import format_wl_checker_traffic_purchase
+from services.yandex_metrica import report_landing_payment_to_metrica
 
 
 async def _maybe_cancel_autopay_on_manual_payment(payload_parts: dict[str, str]) -> None:
@@ -332,6 +333,12 @@ async def process_confirmed_payment(payload) -> bool:
 
             await post_payment_success(user_id, method, amount)
             await _credit_partner_commission(user_id, method, amount)
+            try:
+                await report_landing_payment_to_metrica(
+                    user_id, method, amount, panel_days=duration
+                )
+            except Exception as e:
+                logger.warning("Yandex Metrica payment user {}: {}", user_id, e)
 
             # Отправляем уведомление пользователю
             try:

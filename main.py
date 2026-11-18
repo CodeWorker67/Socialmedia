@@ -14,6 +14,8 @@ from config_bd.models import create_tables, engine
 from config_bd.migrate_users_wl_fields import migrate as migrate_wl_fields
 from config_bd.migrate_wl_traffic_meta import migrate as migrate_wl_traffic_meta
 from config_bd.migrate_platega_recurent_payload import migrate as migrate_platega_recurent_payload
+from config_bd.migrate_second_site import migrate as migrate_second_site
+from config_bd.migrate_users_yandex_id import migrate as migrate_users_yandex_id
 from payments import pay_stars, pay_cryptobot, pay_platega, pay_freekassa, pay_wl_traffic, pay_platega_recurrent
 from sheduler.check_connect import check_connect
 from sheduler.check_cryptobot import check_cryptobot_payments
@@ -59,6 +61,8 @@ async def main() -> None:
     await migrate_wl_fields()
     await migrate_wl_traffic_meta()
     await migrate_platega_recurent_payload()
+    await migrate_second_site()
+    await migrate_users_yandex_id()
 
     # Инициализация диспетчера
     dp: Dispatcher = Dispatcher()
