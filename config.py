@@ -7,6 +7,14 @@ load_dotenv()
 
 TG_TOKEN: Optional[str] = os.environ.get("TG_TOKEN")
 ADMIN_IDS: Set[int] = {int(x) for x in os.environ.get("ADMIN_IDS", "").split(', ')} if os.environ.get("ADMIN_IDS") else set()
+ADMINS_YD: Set[int] = {
+    int(x.strip()) for x in os.environ.get("ADMINS_YD", "").split(",") if x.strip()
+}
+
+
+def is_admins_yd(user_id: int) -> bool:
+    """Доступ к /export_yd, /spend и другим командам Yandex Direct."""
+    return user_id in ADMINS_YD
 _cid = os.environ.get("CHECKER_ID")
 CHECKER_ID: Optional[int] = int(_cid) if _cid else None
 CHECKER_IDS: Set[int] = {int(x) for x in os.environ.get("CHECKER_IDS", "").split(', ')} if os.environ.get("CHECKER_IDS") else set()

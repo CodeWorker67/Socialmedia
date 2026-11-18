@@ -1,6 +1,20 @@
 import logging
 
-from sqlalchemy import Column, Integer, String, DateTime, Boolean, BigInteger, Date, Float, Text, ForeignKey, event
+from sqlalchemy import (
+    Column,
+    Integer,
+    String,
+    DateTime,
+    Boolean,
+    BigInteger,
+    Date,
+    Float,
+    Text,
+    ForeignKey,
+    event,
+    Numeric,
+    UniqueConstraint,
+)
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncAttrs
 from sqlalchemy.orm import DeclarativeBase
 from datetime import datetime
@@ -284,6 +298,21 @@ class PlategaRecurent(Base):
     next_charge_at = Column(DateTime, nullable=True)
     time_created = Column(DateTime, default=datetime.now)
     processed = Column(Boolean, default=False)
+
+
+class YandexDirectSpend(Base):
+    """Ручной ввод трат по кабинетам Yandex Direct (метка = users.stamp)."""
+    __tablename__ = 'yandex_direct_spend'
+    __table_args__ = (
+        UniqueConstraint('stamp', 'spend_date', name='uq_yandex_direct_spend_stamp_date'),
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    stamp = Column(String(100), nullable=False)
+    spend_usd = Column(Numeric(12, 2), nullable=False)
+    spend_date = Column(Date, nullable=False)
+    created_at = Column(DateTime, default=datetime.now, nullable=False)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now, nullable=False)
 
 
 # Функция для создания таблиц (запустить один раз)

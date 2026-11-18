@@ -1,5 +1,6 @@
 from datetime import date, datetime, timedelta, timezone
 from collections import defaultdict
+from decimal import Decimal, InvalidOperation
 from typing import Any, List, Optional, Tuple
 from zoneinfo import ZoneInfo
 import asyncio
@@ -11,7 +12,12 @@ from aiogram import F, Router
 from openpyxl.styles import Alignment, Border, Side, PatternFill
 
 from bot import bot, sql, x3
-from config import ADMIN_IDS, MIRROR_SUB_LINK, TRUE_SUB_LINK
+from config import ADMIN_IDS, ADMINS_YD, MIRROR_SUB_LINK, TRUE_SUB_LINK
+from sheduler.social_yd_export import (
+    YD_SPEND_RUB_PER_USD,
+    collect_yd_export_workbook_rows,
+    upsert_yandex_direct_spend,
+)
 from config_bd.models import Users
 from config_bd.utils import (
     _billing_duration_from_amount_fallback,
@@ -1328,3 +1334,200 @@ async def export_panel(message: Message):
     )
 
     logger.info(f"Администратор {message.from_user.id} выгрузил список пользователей панели")
+
+
+def _parse_spend_date(raw: str) -> Optional[date]:
+    for fmt in ("%d.%m.%y", "%d.%m.%Y"):
+        try:
+            return datetime.strptime(raw.strip(), fmt).date()
+        except ValueError:
+            continue
+    return None
+
+
+def _parse_spend_usd(raw: str) -> Optional[Decimal]:
+    text = (raw or "").strip().replace(",", ".")
+    if not text:
+        return None
+    try:
+        value = Decimal(text)
+    except InvalidOperation:
+        return None
+    if value < 0:
+        return None
+    return value.quantize(Decimal("0.01"))
+
+
+@router.message(Command("spend"), F.from_user.id.in_(ADMINS_YD))
+async def spend_yd_command(message: Message) -> None:
+    parts = (message.text or "").split()
+    if len(parts) != 4:
+        await message.answer(
+            "❌ Использование: <code>/spend {метка} {сумма_$} {дата}</code>\n"
+            "Пример: <code>/spend happ_now_global 31.72 18.11.2026</code>",
+            parse_mode="HTML",
+        )
+        return
+
+    stamp = parts[1].strip()
+    if not stamp:
+        await message.answer("❌ Метка не может быть пустой.")
+        return
+
+    spend_usd = _parse_spend_usd(parts[2])
+    if spend_usd is None:
+        await message.answer("❌ Неверная сумма в долларах. Пример: <code>31.72</code>", parse_mode="HTML")
+        return
+
+    spend_day = _parse_spend_date(parts[3])
+    if spend_day is None:
+        await message.answer(
+            "❌ Неверный формат даты. Пример: <code>18.11.2026</code> или <code>18.11.26</code>",
+            parse_mode="HTML",
+        )
+        return
+
+    try:
+        await upsert_yandex_direct_spend(
+            stamp=stamp,
+            spend_usd=spend_usd,
+            spend_date=spend_day,
+        )
+    except Exception:
+        logger.exception("Ошибка /spend")
+        await message.answer(
+            "❌ Не удалось сохранить трату. Проверьте, что таблица "
+            "<code>yandex_direct_spend</code> создана "
+            "(<code>python -m config_bd.migrate_yandex_direct_spend</code>).",
+            parse_mode="HTML",
+        )
+        return
+
+    rub = (spend_usd * YD_SPEND_RUB_PER_USD).quantize(Decimal("0.01"))
+    await message.answer(
+        "✅ Трата сохранена\n"
+        f"Метка: <code>{stamp}</code>\n"
+        f"Дата: <code>{spend_day.strftime('%d.%m.%Y')}</code>\n"
+        f"Spend: <code>{spend_usd}</code> $ → <code>{rub}</code> ₽ (×85)",
+        parse_mode="HTML",
+    )
+    logger.info(
+        "ADMINS_YD %s /spend stamp=%s date=%s usd=%s",
+        message.from_user.id,
+        stamp,
+        spend_day.isoformat(),
+        spend_usd,
+    )
+
+
+@router.message(
+    Command("spend"),
+    ~F.from_user.id.in_(ADMINS_YD),
+    F.from_user.id.in_(ADMIN_IDS),
+)
+async def spend_yd_admin_only_notice(message: Message) -> None:
+    await message.answer("❌ Команда доступна только ADMINS_YD.")
+
+
+def _write_yd_sheet(ws, rows: List[List]) -> None:
+    header_alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+    thin_border = Border(
+        left=Side(style="thin"),
+        right=Side(style="thin"),
+        top=Side(style="thin"),
+        bottom=Side(style="thin"),
+    )
+    for row_num, row in enumerate(rows, 1):
+        for col_num, value in enumerate(row, 1):
+            cell = ws.cell(row=row_num, column=col_num, value=value)
+            cell.border = thin_border
+            if row_num == 1:
+                cell.alignment = header_alignment
+    for col in ws.columns:
+        max_len = 0
+        col_letter = col[0].column_letter
+        for cell in col:
+            if cell.value is not None:
+                max_len = max(max_len, len(str(cell.value)))
+        ws.column_dimensions[col_letter].width = min(max_len + 2, _EXCEL_COL_WIDTH_MAX)
+    ws.freeze_panes = "A2"
+
+
+def _sync_build_yd_xlsx(
+    general_rows: List[List],
+    daily_sheets: List[Tuple[str, List[List]]],
+) -> str:
+    wb = openpyxl.Workbook()
+    ws_general = wb.active
+    ws_general.title = "ОБЩИЙ"
+    _write_yd_sheet(ws_general, general_rows)
+    for sheet_title, sheet_rows in daily_sheets:
+        ws = wb.create_sheet(sheet_title)
+        _write_yd_sheet(ws, sheet_rows)
+    export_path = tempfile.mktemp(suffix=".xlsx")
+    wb.save(export_path)
+    return export_path
+
+
+@router.message(Command("export_yd"))
+async def export_yd_command(message: Message) -> None:
+    if not message.from_user or message.from_user.id not in ADMINS_YD:
+        if message.from_user and message.from_user.id in ADMIN_IDS:
+            await message.answer("❌ Команда доступна только ADMINS_YD.")
+        return
+
+    await message.answer("🔄 Формирую выгрузку YD…")
+    export_path = None
+    try:
+        general_rows, daily_sheets = await collect_yd_export_workbook_rows()
+        export_path = await asyncio.to_thread(
+            _sync_build_yd_xlsx,
+            general_rows,
+            daily_sheets,
+        )
+        stamp_count = max(
+            0,
+            len(general_rows) - 1 - (1 if len(general_rows) > 1 and general_rows[-1][0] == "ИТОГО" else 0),
+        )
+        if daily_sheets:
+            day_titles = [t for t, _ in daily_sheets if not t.startswith("Неделя ")]
+            week_count = sum(1 for t, _ in daily_sheets if t.startswith("Неделя "))
+            if day_titles:
+                newest_day, oldest_day = day_titles[0], day_titles[-1]
+                days_caption = (
+                    f"Листы по дням (МСК): {len(day_titles)} шт., {newest_day}"
+                    if len(day_titles) == 1
+                    else f"Листы по дням (МСК): {len(day_titles)} шт., {newest_day} → {oldest_day}"
+                )
+                if week_count:
+                    days_caption += f"\nСводки по неделям: {week_count} шт."
+            else:
+                days_caption = "Листы по дням (МСК): нет регистраций с датой"
+        else:
+            days_caption = "Листы по дням (МСК): нет регистраций с датой"
+        await message.answer_document(
+            document=FSInputFile(
+                export_path,
+                filename=f"export_yd_{datetime.now(MSK).strftime('%d.%m.%y')}.xlsx",
+            ),
+            caption=(
+                "📊 Выгрузка YD\n"
+                f"Лист «ОБЩИЙ»: меток {stamp_count}\n"
+                f"{days_caption}"
+            ),
+        )
+        logger.info(
+            "ADMINS_YD %s /export_yd: keys=%s days=%s",
+            message.from_user.id,
+            stamp_count,
+            len(daily_sheets),
+        )
+    except Exception:
+        logger.exception("Ошибка /export_yd")
+        await message.answer("❌ Не удалось сформировать выгрузку. Попробуйте позже.")
+    finally:
+        if export_path:
+            try:
+                os.remove(export_path)
+            except OSError:
+                pass

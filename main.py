@@ -6,7 +6,7 @@ from aiogram.types import BotCommand
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 from bot import bot
-from config import ADMIN_IDS, THROTTLE_MAX_UPDATES, THROTTLE_WINDOW_SEC, WEB_API_PORT
+from config import ADMIN_IDS, ADMINS_YD, THROTTLE_MAX_UPDATES, THROTTLE_WINDOW_SEC, WEB_API_PORT
 from middleware.sync_tg_profile import SyncTgProfileMiddleware
 from middleware.user_throttle import UserThrottleMiddleware
 from utils.menu_photos import init_menu_photos
@@ -16,6 +16,7 @@ from config_bd.migrate_wl_traffic_meta import migrate as migrate_wl_traffic_meta
 from config_bd.migrate_platega_recurent_payload import migrate as migrate_platega_recurent_payload
 from config_bd.migrate_second_site import migrate as migrate_second_site
 from config_bd.migrate_users_yandex_id import migrate as migrate_users_yandex_id
+from config_bd.migrate_yandex_direct_spend import migrate as migrate_yandex_direct_spend
 from payments import pay_stars, pay_cryptobot, pay_platega, pay_freekassa, pay_wl_traffic, pay_platega_recurrent
 from sheduler.check_connect import check_connect
 from sheduler.check_cryptobot import check_cryptobot_payments
@@ -63,6 +64,7 @@ async def main() -> None:
     await migrate_platega_recurent_payload()
     await migrate_second_site()
     await migrate_users_yandex_id()
+    await migrate_yandex_direct_spend()
 
     # Инициализация диспетчера
     dp: Dispatcher = Dispatcher()
@@ -70,7 +72,7 @@ async def main() -> None:
         UserThrottleMiddleware(
             max_per_window=THROTTLE_MAX_UPDATES,
             window_sec=THROTTLE_WINDOW_SEC,
-            bypass_user_ids=ADMIN_IDS,
+            bypass_user_ids=ADMIN_IDS | ADMINS_YD,
         )
     )
     dp.update.outer_middleware(SyncTgProfileMiddleware())

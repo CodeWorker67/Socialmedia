@@ -102,6 +102,18 @@ def _parse_traffic_duration(raw: Optional[str]) -> Optional[int]:
         return None
 
 
+def _parse_payment_payload_map(payload: Optional[str]) -> dict[str, str]:
+    if not payload:
+        return {}
+    out: dict[str, str] = {}
+    for part in payload.split(","):
+        if ":" not in part:
+            continue
+        k, _, v = part.partition(":")
+        out[k.strip()] = v.strip()
+    return out
+
+
 def _payment_method_label(raw: Optional[str]) -> str:
     if not raw:
         return "—"
